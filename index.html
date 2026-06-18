@@ -1,0 +1,1842 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>音楽ビジュアライザー</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #000;
+      min-height: 100vh;
+      font-family: 'Segoe UI', sans-serif;
+      color: #fff;
+      overflow: hidden;
+    }
+    #controls {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      background: rgba(0,0,0,0.7);
+      padding: 12px 20px;
+      border-radius: 30px;
+      backdrop-filter: blur(10px);
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: 95%;
+    }
+    button {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border: none;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    button:hover {
+      transform: scale(1.05);
+      box-shadow: 0 5px 20px rgba(102, 126, 234, 0.5);
+    }
+    button.active {
+      background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    }
+    button.recording {
+      background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+      animation: pulse 1s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(235, 51, 73, 0.7); }
+      50% { box-shadow: 0 0 0 10px rgba(235, 51, 73, 0); }
+    }
+    select {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 15px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .file-label {
+      display: inline-block;
+      cursor: pointer;
+    }
+    .file-label input[type="file"] {
+      position: absolute;
+      width: 1px; height: 1px;
+      padding: 0; margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      border: 0;
+    }
+    .file-button {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 13px;
+      transition: transform 0.2s, box-shadow 0.2s;
+      display: inline-block;
+    }
+    .file-label:hover .file-button {
+      transform: scale(1.05);
+      box-shadow: 0 5px 20px rgba(102, 126, 234, 0.5);
+    }
+    #info {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 12px;
+      color: rgba(255,255,255,0.6);
+      text-align: center;
+      max-width: 90%;
+      padding: 10px;
+      background: rgba(0,0,0,0.5);
+      border-radius: 10px;
+    }
+    #backgroundMedia {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      z-index: 0;
+    }
+    canvas {
+      position: fixed;
+      top: 0; left: 0;
+      z-index: 1;
+    }
+    #settingsToggle {
+      position: fixed;
+      right: 20px;
+      top: 20px;
+      z-index: 101;
+      width: 50px; height: 50px;
+      border-radius: 50%;
+      padding: 0;
+      font-size: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #settingsPanel {
+      position: fixed;
+      right: 20px;
+      top: 80px;
+      width: 280px;
+      max-height: calc(100vh - 120px);
+      overflow-y: auto;
+      background: rgba(0,0,0,0.85);
+      border-radius: 20px;
+      padding: 20px;
+      z-index: 100;
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.1);
+      display: none;
+    }
+    #settingsPanel.open { display: block; }
+    #settingsPanel h3 {
+      margin-bottom: 15px;
+      font-size: 14px;
+      color: #fff;
+      border-bottom: 1px solid rgba(255,255,255,0.2);
+      padding-bottom: 10px;
+    }
+    .setting-group { margin-bottom: 15px; }
+    .setting-group label {
+      display: block;
+      font-size: 11px;
+      color: rgba(255,255,255,0.7);
+      margin-bottom: 6px;
+    }
+    .setting-group input[type="range"] {
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: rgba(255,255,255,0.2);
+      outline: none;
+      -webkit-appearance: none;
+    }
+    .setting-group input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      cursor: pointer;
+    }
+    .setting-group input[type="color"] {
+      width: 100%;
+      height: 35px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      background: transparent;
+    }
+    .color-presets {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    .color-preset {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    .color-preset:hover { transform: scale(1.1); }
+    .color-preset.selected { border-color: #fff; }
+    .setting-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .setting-row input[type="range"] { flex: 1; }
+    .setting-value {
+      min-width: 35px;
+      text-align: right;
+      font-size: 11px;
+      color: rgba(255,255,255,0.6);
+    }
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .checkbox-group input[type="checkbox"] {
+      width: 18px; height: 18px;
+      cursor: pointer;
+    }
+    .section-divider {
+      border-top: 1px solid rgba(255,255,255,0.1);
+      margin: 15px 0;
+      padding-top: 15px;
+    }
+    #recordingIndicator {
+      position: fixed;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(235, 51, 73, 0.9);
+      padding: 8px 20px;
+      border-radius: 20px;
+      font-size: 14px;
+      z-index: 102;
+      display: none;
+    }
+    #recordingIndicator.show { display: block; }
+  </style>
+</head>
+<body>
+  <img id="backgroundImage" style="display: none;">
+  <video id="backgroundMedia" muted loop playsinline style="display: none;"></video>
+
+  <div id="controls">
+    <button id="micBtn">🎤 マイク</button>
+    <label class="file-label">
+      <input type="file" id="fileInput" accept="audio/*">
+      <span class="file-button">🎵 音楽</span>
+    </label>
+    <button id="playBtn" style="display: none;">⏸️</button>
+    <select id="modeSelect">
+      <option value="circles">🔵 サークル</option>
+      <option value="bars">📊 バー</option>
+      <option value="wave">🌊 ウェーブ</option>
+      <option value="spiral">🌀 スパイラル</option>
+      <option value="geometric">🔷 ジオメトリック</option>
+      <option value="flower">🌸 フラワー</option>
+      <option value="pulse">⚡ パルス</option>
+      <option value="kaleidoscope">🔺 カレイドスコープ</option>
+      <option value="mesh">🌐 メッシュ</option>
+      <option value="crystal">💎 クリスタル</option>
+    </select>
+    <button id="recordBtn">⏺️ 録画開始</button>
+  </div>
+
+  <button id="settingsToggle">⚙️</button>
+
+  <div id="recordingIndicator">🔴 録画中...</div>
+
+  <div id="settingsPanel">
+    <h3>🎨 ビジュアル調整</h3>
+
+    <div class="setting-group">
+      <label>サイズ</label>
+      <div class="setting-row">
+        <input type="range" id="sizeScale" min="0.3" max="2" step="0.1" value="1">
+        <span class="setting-value" id="sizeValue">1.0x</span>
+      </div>
+    </div>
+
+    <div class="setting-group">
+      <label>線の太さ</label>
+      <div class="setting-row">
+        <input type="range" id="lineWidth" min="1" max="10" step="0.5" value="2">
+        <span class="setting-value" id="lineWidthValue">2</span>
+      </div>
+    </div>
+
+    <div class="setting-group">
+      <label>音への反応度</label>
+      <div class="setting-row">
+        <input type="range" id="sensitivity" min="0.2" max="3" step="0.1" value="1">
+        <span class="setting-value" id="sensitivityValue">1.0x</span>
+      </div>
+    </div>
+
+    <div class="setting-group">
+      <label>回転スピード</label>
+      <div class="setting-row">
+        <input type="range" id="rotationSpeed" min="0" max="3" step="0.1" value="1">
+        <span class="setting-value" id="rotationSpeedValue">1.0x</span>
+      </div>
+    </div>
+
+    <div class="setting-group">
+      <label>残像効果</label>
+      <div class="setting-row">
+        <input type="range" id="trailEffect" min="0.02" max="0.5" step="0.02" value="0.1">
+        <span class="setting-value" id="trailEffectValue">0.1</span>
+      </div>
+    </div>
+
+    <div class="setting-group">
+      <label>メインカラー</label>
+      <input type="color" id="mainColor" value="#667eea">
+      <div class="color-presets">
+        <!-- 元のプリセット -->
+        <div class="color-preset selected" style="background: linear-gradient(135deg, #667eea, #764ba2);" data-colors="102,126,234|118,75,162|240,98,146|255,171,64|77,208,225" title="パープル・ピンク"></div>
+        <div class="color-preset" style="background: linear-gradient(135deg, #ff6b6b, #feca57);" data-colors="255,107,107|254,202,87|255,159,67|238,82,83|10,189,227" title="サンセット"></div>
+        <div class="color-preset" style="background: linear-gradient(135deg, #00d2d3, #54a0ff);" data-colors="0,210,211|84,160,255|95,39,205|200,214,229|87,101,116" title="オーシャン"></div>
+        <div class="color-preset" style="background: linear-gradient(135deg, #ff9ff3, #f368e0);" data-colors="255,159,243|243,104,224|255,107,107|253,150,68|0,206,201" title="ピンク"></div>
+        <div class="color-preset" style="background: linear-gradient(135deg, #2ed573, #1e90ff);" data-colors="46,213,115|30,144,255|255,71,87|255,165,2|123,237,159" title="ネオン"></div>
+        <!-- 新しいプリセット -->
+        <div class="color-preset" style="background: linear-gradient(135deg, #f093fb, #f5576c);" data-colors="240,147,251|245,87,108|254,140,131|255,184,140|236,204,104" title="ピーチ"></div>
+        <div class="color-preset" style="background: linear-gradient(135deg, #4facfe, #00f2fe);" data-colors="79,172,254|0,242,254|67,233,123|255,236,39|255,154,158" title="スカイ"></div>
+        <div class="color-preset" style="background: linear-gradient(135deg, #43e97b, #38f9d7);" data-colors="67,233,123|56,249,215|79,172,254|168,192,255|204,169,255" title="ミント"></div>
+        <div class="color-preset" style="background: linear-gradient(135deg, #fa709a, #fee140);" data-colors="250,112,154|254,225,64|255,154,158|254,207,239|168,192,255" title="トロピカル"></div>
+        <div class="color-preset" style="background: linear-gradient(135deg, #a18cd1, #fbc2eb);" data-colors="161,140,209|251,194,235|255,154,158|254,207,239|168,192,255" title="パステル"></div>
+        <div class="color-preset" style="background: linear-gradient(135deg, #ff0844, #ffb199);" data-colors="255,8,68|255,177,153|255,220,178|193,248,207|200,232,252" title="コーラル"></div>
+        <div class="color-preset" style="background: linear-gradient(135deg, #0ba360, #3cba92);" data-colors="11,163,96|60,186,146|130,218,140|255,240,165|255,191,145" title="フォレスト"></div>
+        <div class="color-preset" style="background: linear-gradient(135deg, #6a11cb, #2575fc);" data-colors="106,17,203|37,117,252|102,126,234|168,192,255|255,154,158" title="ディープブルー"></div>
+        <div class="color-preset" style="background: linear-gradient(135deg, #f77062, #fe5196);" data-colors="247,112,98|254,81,150|255,154,158|254,207,239|161,140,209" title="ローズ"></div>
+        <div class="color-preset" style="background: linear-gradient(135deg, #c471f5, #fa71cd);" data-colors="196,113,245|250,113,205|255,154,158|254,225,64|168,192,255" title="バイオレット"></div>
+        <!-- モノクロ系 -->
+        <div class="color-preset" style="background: linear-gradient(135deg, #fff, #888);" data-colors="255,255,255|200,200,200|150,150,150|100,100,100|50,50,50" title="モノクロ"></div>
+        <div class="color-preset" style="background: linear-gradient(135deg, #00ffff, #0080ff);" data-colors="0,255,255|0,200,255|0,150,255|0,100,255|0,50,200" title="サイバー"></div>
+        <div class="color-preset" style="background: linear-gradient(135deg, #ff00ff, #8000ff);" data-colors="255,0,255|200,0,255|150,0,255|100,0,200|50,0,150" title="マゼンタ"></div>
+        <div class="color-preset" style="background: linear-gradient(135deg, #ffff00, #ff8000);" data-colors="255,255,0|255,220,0|255,180,0|255,140,0|255,100,0" title="ゴールド"></div>
+        <div class="color-preset" style="background: linear-gradient(135deg, #00ff00, #008000);" data-colors="0,255,0|0,220,50|0,180,100|0,140,50|0,100,0" title="マトリックス"></div>
+      </div>
+    </div>
+
+    <div class="setting-group">
+      <label>グラデーションモード</label>
+      <select id="gradientMode" style="width: 100%;">
+        <option value="palette">パレット（複数色）</option>
+        <option value="rainbow">レインボー</option>
+        <option value="smooth">スムースグラデーション</option>
+        <option value="single">単色</option>
+      </select>
+    </div>
+
+    <div class="setting-group">
+      <label>背景色（背景メディアがない時）</label>
+      <input type="color" id="bgColor" value="#000000">
+    </div>
+
+    <div class="setting-group">
+      <div class="checkbox-group">
+        <input type="checkbox" id="showParticles" checked>
+        <label for="showParticles">パーティクル表示</label>
+      </div>
+    </div>
+
+    <div class="setting-group">
+      <div class="checkbox-group">
+        <input type="checkbox" id="showCenterCircle" checked>
+        <label for="showCenterCircle">中央の円を表示</label>
+      </div>
+    </div>
+
+    <div class="setting-group">
+      <label>波形の滑らかさ</label>
+      <div class="setting-row">
+        <input type="range" id="smoothness" min="1" max="10" step="1" value="5">
+        <span class="setting-value" id="smoothnessValue">5</span>
+      </div>
+    </div>
+
+    <div class="setting-group">
+      <label>パーティクル数</label>
+      <div class="setting-row">
+        <input type="range" id="particleCount" min="0" max="200" step="10" value="100">
+        <span class="setting-value" id="particleCountValue">100</span>
+      </div>
+    </div>
+
+    <div class="section-divider">
+      <h3>🖼️ 背景メディア</h3>
+    </div>
+
+    <div class="setting-group">
+      <label class="file-label" style="width: 100%;">
+        <input type="file" id="bgImageInput" accept="image/*">
+        <span class="file-button" style="width: 100%; text-align: center; display: block;">🖼️ 背景画像を選択</span>
+      </label>
+    </div>
+
+    <div class="setting-group">
+      <label class="file-label" style="width: 100%;">
+        <input type="file" id="bgVideoInput" accept="video/*">
+        <span class="file-button" style="width: 100%; text-align: center; display: block;">🎬 背景動画を選択</span>
+      </label>
+    </div>
+
+    <div class="setting-group">
+      <label>背景の透明度</label>
+      <div class="setting-row">
+        <input type="range" id="bgOpacity" min="0" max="1" step="0.1" value="0.5">
+        <span class="setting-value" id="bgOpacityValue">0.5</span>
+      </div>
+    </div>
+
+    <div class="setting-group">
+      <label>背景の表示方法</label>
+      <select id="bgFitMode" style="width: 100%;">
+        <option value="cover">カバー（画面を埋める、はみ出しは切り取り）</option>
+        <option value="contain">フィット（全体を表示、余白あり）</option>
+        <option value="stretch">引き伸ばし（アスペクト比を無視）</option>
+      </select>
+    </div>
+
+    <div class="setting-group">
+      <button id="clearBgBtn" style="width: 100%;">🗑️ 背景をクリア</button>
+    </div>
+
+    <div class="section-divider">
+      <h3>🎥 録画設定</h3>
+    </div>
+
+    <div class="setting-group">
+      <label>録画品質</label>
+      <select id="recordQuality" style="width: 100%;">
+        <option value="high">高品質 (大きいファイル)</option>
+        <option value="medium" selected>標準</option>
+        <option value="low">低品質 (小さいファイル)</option>
+      </select>
+    </div>
+
+    <div class="setting-group">
+      <label>音声</label>
+      <select id="recordAudio" style="width: 100%;">
+        <option value="yes">音声あり（VLCで再生推奨）</option>
+        <option value="no">音声なし（Windows Media Playerで再生可）</option>
+      </select>
+    </div>
+
+    <div class="setting-group">
+      <div class="checkbox-group">
+        <input type="checkbox" id="recordFromStart" checked>
+        <label for="recordFromStart">冒頭から録画（音楽/動画を最初から再生）</label>
+      </div>
+    </div>
+
+    <div class="setting-group" style="background: rgba(255,200,0,0.1); padding: 10px; border-radius: 8px; margin-top: 10px;">
+      <label style="color: #ffcc00; font-size: 10px;">💡 ヒント: 録画ファイルが再生できない場合は、VLC Media Player（無料）をお使いください。<br>
+      <a href="https://www.videolan.org/vlc/" target="_blank" style="color: #88ccff;">https://www.videolan.org/vlc/</a></label>
+    </div>
+
+    <div class="setting-group">
+      <button id="resetSettings" style="width: 100%;">🔄 設定リセット</button>
+    </div>
+  </div>
+
+  <canvas id="canvas"></canvas>
+
+  <div id="info">
+    🎵 マイクまたは音楽ファイルを選択して開始してください
+  </div>
+
+  <script>
+    // グローバル変数
+    let canvas, ctx;
+    let audioContext, analyser, dataArray, bufferLength;
+    let source = null;
+    let micStream = null;
+    let isMicActive = false;
+    let isAudioPlaying = false;
+    let currentFileName = '';
+    let isRunning = false;
+    let mode = 'circles';
+    let angleOffset = 0;
+    let particles = [];
+    let audioElement = null;
+
+    // 背景メディア
+    let bgImage = null;
+    let bgVideo = null;
+    let hasBgMedia = false;
+
+    // 録画
+    let mediaRecorder = null;
+    let recordedChunks = [];
+    let isRecording = false;
+
+    // 設定
+    let settings = {
+      sizeScale: 1,
+      lineWidth: 2,
+      sensitivity: 1,
+      rotationSpeed: 1,
+      trailEffect: 0.1,
+      bgColor: [0, 0, 0],
+      bgOpacity: 0.5,
+      bgFitMode: 'cover',
+      showParticles: true,
+      showCenterCircle: true,
+      smoothness: 5,
+      particleCount: 100,
+      recordQuality: 'medium',
+      recordAudio: 'yes',
+      recordFromStart: true,
+      gradientMode: 'palette'
+    };
+
+    let palette = [
+      [102, 126, 234],
+      [118, 75, 162],
+      [240, 98, 146],
+      [255, 171, 64],
+      [77, 208, 225],
+    ];
+
+    window.addEventListener('DOMContentLoaded', init);
+
+    function init() {
+      try {
+        canvas = document.getElementById('canvas');
+        if (!canvas) { console.error('canvas not found'); return; }
+        ctx = canvas.getContext('2d');
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        updateParticles();
+
+        // イベントリスナー（要素の存在確認付き）
+        const micBtn = document.getElementById('micBtn');
+        const fileInput = document.getElementById('fileInput');
+        const playBtn = document.getElementById('playBtn');
+        const modeSelect = document.getElementById('modeSelect');
+        const settingsToggle = document.getElementById('settingsToggle');
+        const recordBtn = document.getElementById('recordBtn');
+        const bgImageInput = document.getElementById('bgImageInput');
+        const bgVideoInput = document.getElementById('bgVideoInput');
+        const clearBgBtn = document.getElementById('clearBgBtn');
+
+        if (micBtn) micBtn.addEventListener('click', toggleMic);
+        if (fileInput) fileInput.addEventListener('change', handleFile);
+        if (playBtn) playBtn.addEventListener('click', toggleAudioPlayback);
+        if (modeSelect) modeSelect.addEventListener('change', (e) => mode = e.target.value);
+        if (settingsToggle) settingsToggle.addEventListener('click', toggleSettings);
+        if (recordBtn) recordBtn.addEventListener('click', toggleRecording);
+        if (bgImageInput) bgImageInput.addEventListener('change', handleBgImage);
+        if (bgVideoInput) bgVideoInput.addEventListener('change', handleBgVideo);
+        if (clearBgBtn) clearBgBtn.addEventListener('click', clearBackground);
+
+        setupSettingsListeners();
+        animate();
+        console.log('初期化完了');
+      } catch (err) {
+        console.error('初期化エラー:', err);
+        alert('初期化エラー: ' + err.message);
+      }
+    }
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+
+    function toggleSettings() {
+      document.getElementById('settingsPanel').classList.toggle('open');
+    }
+
+    function showInfo(message) {
+      document.getElementById('info').textContent = message;
+    }
+
+    // 背景画像
+    async function handleBgImage(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      clearBackground();
+
+      try {
+        // createImageBitmapを使用（file://でも動作）
+        const bitmap = await createImageBitmap(file);
+        bgImage = bitmap;
+        hasBgMedia = true;
+        showInfo('🖼️ 背景画像を設定しました: ' + file.name);
+      } catch (err) {
+        console.error('画像読み込みエラー:', err);
+        showInfo('❌ 画像の読み込みに失敗しました: ' + file.name);
+      }
+    }
+
+    // 背景動画
+    function handleBgVideo(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      clearBackground();
+
+      const video = document.getElementById('backgroundMedia');
+      video.src = URL.createObjectURL(file);
+      video.style.display = 'block';
+      video.play();
+
+      bgVideo = video;
+      hasBgMedia = true;
+      showInfo('🎬 背景動画を設定しました: ' + file.name);
+    }
+
+    // 背景クリア
+    function clearBackground() {
+      bgImage = null;
+      bgVideo = null;
+      hasBgMedia = false;
+
+      const imgEl = document.getElementById('backgroundImage');
+      if (imgEl) {
+        if (imgEl.src) URL.revokeObjectURL(imgEl.src);
+        imgEl.src = '';
+      }
+
+      const video = document.getElementById('backgroundMedia');
+      if (video) {
+        video.pause();
+        if (video.src) URL.revokeObjectURL(video.src);
+        video.src = '';
+        video.style.display = 'none';
+      }
+
+      showInfo('🗑️ 背景をクリアしました');
+    }
+
+    // 録画トグル
+    function toggleRecording() {
+      if (isRecording) {
+        stopRecording();
+      } else {
+        startRecording();
+      }
+    }
+
+    // 録画開始
+    function startRecording() {
+      recordedChunks = [];
+
+      // 冒頭から録画する場合、メディアを巻き戻して再生
+      if (settings.recordFromStart) {
+        // 音楽を冒頭に戻す
+        if (audioElement) {
+          audioElement.currentTime = 0;
+          audioElement.play();
+          isAudioPlaying = true;
+          isRunning = true;
+          const playBtn = document.getElementById('playBtn');
+          if (playBtn) {
+            playBtn.textContent = '⏸️';
+            playBtn.classList.add('active');
+          }
+        }
+        // 背景動画を冒頭に戻す
+        if (bgVideo) {
+          bgVideo.currentTime = 0;
+          bgVideo.play();
+        }
+      }
+
+      // 品質設定
+      let videoBitsPerSecond;
+      switch (settings.recordQuality) {
+        case 'high': videoBitsPerSecond = 8000000; break;
+        case 'low': videoBitsPerSecond = 1000000; break;
+        default: videoBitsPerSecond = 4000000;
+      }
+
+      // キャンバスからストリームを取得
+      const canvasStream = canvas.captureStream(30);
+
+      // 音声を含める場合のみ追加
+      let combinedStream = canvasStream;
+      if (settings.recordAudio === 'yes' && audioContext && audioContext.state === 'running') {
+        try {
+          const dest = audioContext.createMediaStreamDestination();
+          analyser.connect(dest);
+          const audioTracks = dest.stream.getAudioTracks();
+          audioTracks.forEach(track => canvasStream.addTrack(track));
+        } catch (e) {
+          console.log('音声トラックの追加に失敗:', e);
+        }
+      }
+
+      // サポートされる形式を確認（MP4優先）
+      let mimeType = '';
+      let fileExtension = '';
+
+      const mimeTypes = [
+        { type: 'video/mp4;codecs=avc1', ext: 'mp4' },
+        { type: 'video/mp4', ext: 'mp4' },
+        { type: 'video/webm;codecs=vp9', ext: 'webm' },
+        { type: 'video/webm;codecs=vp8', ext: 'webm' },
+        { type: 'video/webm', ext: 'webm' }
+      ];
+
+      for (const format of mimeTypes) {
+        if (MediaRecorder.isTypeSupported(format.type)) {
+          mimeType = format.type;
+          fileExtension = format.ext;
+          break;
+        }
+      }
+
+      if (!mimeType) {
+        showInfo('❌ お使いのブラウザは録画をサポートしていません');
+        return;
+      }
+
+      try {
+        mediaRecorder = new MediaRecorder(combinedStream, {
+          mimeType: mimeType,
+          videoBitsPerSecond: videoBitsPerSecond
+        });
+      } catch (e) {
+        showInfo('❌ 録画の開始に失敗しました: ' + e.message);
+        return;
+      }
+
+      // 録画形式を保存
+      mediaRecorder._fileExtension = fileExtension;
+      mediaRecorder._mimeType = mimeType;
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          recordedChunks.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const ext = mediaRecorder._fileExtension || 'webm';
+        const mime = mediaRecorder._mimeType || 'video/webm';
+        const blob = new Blob(recordedChunks, { type: mime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'visualizer-' + Date.now() + '.' + ext;
+        a.click();
+        URL.revokeObjectURL(url);
+        showInfo('🎥 録画を保存しました！（' + ext.toUpperCase() + '形式）');
+      };
+
+      mediaRecorder.start(100);
+      isRecording = true;
+
+      document.getElementById('recordBtn').textContent = '⏹️ 録画停止';
+      document.getElementById('recordBtn').classList.add('recording');
+      document.getElementById('recordingIndicator').classList.add('show');
+      showInfo('🔴 録画中...');
+    }
+
+    // 録画停止
+    function stopRecording() {
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+      }
+      isRecording = false;
+
+      document.getElementById('recordBtn').textContent = '⏺️ 録画開始';
+      document.getElementById('recordBtn').classList.remove('recording');
+      document.getElementById('recordingIndicator').classList.remove('show');
+    }
+
+    // 設定リスナー
+    function setupSettingsListeners() {
+      const addListener = (id, event, handler) => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener(event, handler);
+      };
+
+      addListener('sizeScale', 'input', (e) => {
+        settings.sizeScale = parseFloat(e.target.value);
+        const v = document.getElementById('sizeValue');
+        if (v) v.textContent = settings.sizeScale.toFixed(1) + 'x';
+      });
+
+      addListener('lineWidth', 'input', (e) => {
+        settings.lineWidth = parseFloat(e.target.value);
+        const v = document.getElementById('lineWidthValue');
+        if (v) v.textContent = settings.lineWidth;
+      });
+
+      addListener('sensitivity', 'input', (e) => {
+        settings.sensitivity = parseFloat(e.target.value);
+        const v = document.getElementById('sensitivityValue');
+        if (v) v.textContent = settings.sensitivity.toFixed(1) + 'x';
+      });
+
+      addListener('rotationSpeed', 'input', (e) => {
+        settings.rotationSpeed = parseFloat(e.target.value);
+        const v = document.getElementById('rotationSpeedValue');
+        if (v) v.textContent = settings.rotationSpeed.toFixed(1) + 'x';
+      });
+
+      addListener('trailEffect', 'input', (e) => {
+        settings.trailEffect = parseFloat(e.target.value);
+        const v = document.getElementById('trailEffectValue');
+        if (v) v.textContent = settings.trailEffect.toFixed(2);
+      });
+
+      addListener('mainColor', 'input', (e) => {
+        const hex = e.target.value;
+        palette[0] = [parseInt(hex.substr(1, 2), 16), parseInt(hex.substr(3, 2), 16), parseInt(hex.substr(5, 2), 16)];
+        document.querySelectorAll('.color-preset').forEach(p => p.classList.remove('selected'));
+      });
+
+      document.querySelectorAll('.color-preset').forEach(preset => {
+        preset.addEventListener('click', () => {
+          const colors = preset.dataset.colors.split('|').map(c => c.split(',').map(Number));
+          palette = colors;
+          document.querySelectorAll('.color-preset').forEach(p => p.classList.remove('selected'));
+          preset.classList.add('selected');
+          particles.forEach(p => p.colorIndex = Math.floor(Math.random() * palette.length));
+        });
+      });
+
+      addListener('bgColor', 'input', (e) => {
+        const hex = e.target.value;
+        settings.bgColor = [parseInt(hex.substr(1, 2), 16), parseInt(hex.substr(3, 2), 16), parseInt(hex.substr(5, 2), 16)];
+      });
+
+      addListener('bgOpacity', 'input', (e) => {
+        settings.bgOpacity = parseFloat(e.target.value);
+        const v = document.getElementById('bgOpacityValue');
+        if (v) v.textContent = settings.bgOpacity.toFixed(1);
+      });
+
+      addListener('showParticles', 'change', (e) => {
+        settings.showParticles = e.target.checked;
+      });
+
+      addListener('showCenterCircle', 'change', (e) => {
+        settings.showCenterCircle = e.target.checked;
+      });
+
+      addListener('smoothness', 'input', (e) => {
+        settings.smoothness = parseInt(e.target.value);
+        const v = document.getElementById('smoothnessValue');
+        if (v) v.textContent = settings.smoothness;
+        // スムージング定数を更新
+        if (analyser) {
+          analyser.smoothingTimeConstant = 0.5 + (settings.smoothness / 10) * 0.4;
+        }
+      });
+
+      addListener('particleCount', 'input', (e) => {
+        settings.particleCount = parseInt(e.target.value);
+        const v = document.getElementById('particleCountValue');
+        if (v) v.textContent = settings.particleCount;
+        updateParticles();
+      });
+
+      addListener('recordQuality', 'change', (e) => {
+        settings.recordQuality = e.target.value;
+      });
+
+      addListener('recordAudio', 'change', (e) => {
+        settings.recordAudio = e.target.value;
+      });
+
+      addListener('recordFromStart', 'change', (e) => {
+        settings.recordFromStart = e.target.checked;
+      });
+
+      addListener('bgFitMode', 'change', (e) => {
+        settings.bgFitMode = e.target.value;
+      });
+
+      addListener('gradientMode', 'change', (e) => {
+        settings.gradientMode = e.target.value;
+      });
+
+      addListener('resetSettings', 'click', resetSettings);
+    }
+
+    function resetSettings() {
+      settings = {
+        sizeScale: 1, lineWidth: 2, sensitivity: 1, rotationSpeed: 1,
+        trailEffect: 0.1, bgColor: [0, 0, 0], bgOpacity: 0.5, bgFitMode: 'cover',
+        showParticles: true, showCenterCircle: true, smoothness: 5,
+        particleCount: 100, recordQuality: 'medium',
+        recordAudio: 'yes', recordFromStart: true, gradientMode: 'palette'
+      };
+      palette = [[102, 126, 234], [118, 75, 162], [240, 98, 146], [255, 171, 64], [77, 208, 225]];
+
+      document.getElementById('sizeScale').value = 1;
+      document.getElementById('sizeValue').textContent = '1.0x';
+      document.getElementById('lineWidth').value = 2;
+      document.getElementById('lineWidthValue').textContent = '2';
+      document.getElementById('sensitivity').value = 1;
+      document.getElementById('sensitivityValue').textContent = '1.0x';
+      document.getElementById('rotationSpeed').value = 1;
+      document.getElementById('rotationSpeedValue').textContent = '1.0x';
+      document.getElementById('trailEffect').value = 0.1;
+      document.getElementById('trailEffectValue').textContent = '0.10';
+      document.getElementById('mainColor').value = '#667eea';
+      document.getElementById('bgColor').value = '#000000';
+      document.getElementById('bgOpacity').value = 0.5;
+      document.getElementById('bgOpacityValue').textContent = '0.5';
+      document.getElementById('showParticles').checked = true;
+      document.getElementById('showCenterCircle').checked = true;
+      document.getElementById('smoothness').value = 5;
+      document.getElementById('smoothnessValue').textContent = '5';
+      document.getElementById('particleCount').value = 100;
+      document.getElementById('particleCountValue').textContent = '100';
+      document.getElementById('recordQuality').value = 'medium';
+      document.getElementById('recordAudio').value = 'yes';
+      document.getElementById('recordFromStart').checked = true;
+      document.getElementById('bgFitMode').value = 'cover';
+      document.getElementById('gradientMode').value = 'palette';
+
+      if (analyser) analyser.smoothingTimeConstant = 0.8;
+
+      document.querySelectorAll('.color-preset').forEach((p, i) => p.classList.toggle('selected', i === 0));
+      updateParticles();
+    }
+
+    function updateParticles() {
+      const diff = settings.particleCount - particles.length;
+      if (diff > 0) {
+        for (let i = 0; i < diff; i++) particles.push(new Particle());
+      } else if (diff < 0) {
+        particles = particles.slice(0, settings.particleCount);
+      }
+    }
+
+    // グラデーション対応の色取得関数
+    function getColor(index, total, alpha = 0.8) {
+      let r, g, b;
+
+      // 安全対策：NaNや無効な値を防ぐ
+      if (!Number.isFinite(index)) index = 0;
+      if (!Number.isFinite(total) || total <= 0) total = 1;
+      if (!Number.isFinite(alpha)) alpha = 0.8;
+
+      // indexを正規化（0〜total-1の範囲に）
+      index = Math.abs(index) % Math.max(total, 1);
+
+      switch (settings.gradientMode) {
+        case 'rainbow':
+          // レインボー（色相を回転）
+          const hueRatio = total > 1 ? index / total : 0;
+          const hue = (hueRatio * 360 + (angleOffset || 0) * 30) % 360;
+          const rgb = hslToRgb(hue / 360, 0.8, 0.55);
+          r = rgb[0]; g = rgb[1]; b = rgb[2];
+          break;
+
+        case 'smooth':
+          // スムースグラデーション（パレットの色を滑らかに補間）
+          if (palette.length === 1) {
+            r = palette[0][0]; g = palette[0][1]; b = palette[0][2];
+          } else {
+            const ratio = total > 1 ? index / (total - 1) : 0;
+            const t = Math.min(Math.max(ratio, 0), 1) * (palette.length - 1);
+            const i1 = Math.floor(t);
+            const i2 = Math.min(i1 + 1, palette.length - 1);
+            const f = t - i1;
+            r = Math.round(palette[i1][0] * (1 - f) + palette[i2][0] * f);
+            g = Math.round(palette[i1][1] * (1 - f) + palette[i2][1] * f);
+            b = Math.round(palette[i1][2] * (1 - f) + palette[i2][2] * f);
+          }
+          break;
+
+        case 'single':
+          // 単色（パレットの最初の色のみ）
+          r = palette[0][0]; g = palette[0][1]; b = palette[0][2];
+          break;
+
+        case 'palette':
+        default:
+          // パレット（従来通り）
+          const col = palette[Math.abs(Math.floor(index)) % palette.length];
+          r = col[0]; g = col[1]; b = col[2];
+          break;
+      }
+
+      // 最終的な安全チェック
+      r = Math.max(0, Math.min(255, Math.round(r) || 0));
+      g = Math.max(0, Math.min(255, Math.round(g) || 0));
+      b = Math.max(0, Math.min(255, Math.round(b) || 0));
+      alpha = Math.max(0, Math.min(1, alpha));
+
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+
+    // パレットから色を直接取得（互換性用）
+    function getPaletteColor(index) {
+      return palette[index % palette.length];
+    }
+
+    // HSL to RGB 変換
+    function hslToRgb(h, s, l) {
+      let r, g, b;
+      if (s === 0) {
+        r = g = b = l;
+      } else {
+        const hue2rgb = (p, q, t) => {
+          if (t < 0) t += 1;
+          if (t > 1) t -= 1;
+          if (t < 1/6) return p + (q - p) * 6 * t;
+          if (t < 1/2) return q;
+          if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+          return p;
+        };
+        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        const p = 2 * l - q;
+        r = hue2rgb(p, q, h + 1/3);
+        g = hue2rgb(p, q, h);
+        b = hue2rgb(p, q, h - 1/3);
+      }
+      return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+    }
+
+    // AudioContext
+    function initAudioContext() {
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 2048; // より細かい周波数分析
+        analyser.smoothingTimeConstant = 0.8; // スムージング
+        bufferLength = analyser.frequencyBinCount;
+        dataArray = new Uint8Array(bufferLength);
+      }
+      if (audioContext.state === 'suspended') audioContext.resume();
+    }
+
+    // マイク
+    async function toggleMic() {
+      const micBtn = document.getElementById('micBtn');
+      if (isMicActive) { stopMic(); return; }
+
+      try {
+        showInfo('🎤 マイクの許可を求めています...');
+        stopCurrentSource();
+        initAudioContext();
+
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+        });
+
+        source = audioContext.createMediaStreamSource(micStream);
+        source.connect(analyser);
+
+        isRunning = true;
+        isMicActive = true;
+        micBtn.textContent = '🎤 停止';
+        micBtn.classList.add('active');
+        showInfo('🎤 マイクからの音声に反応しています');
+      } catch (err) {
+        console.error('マイクエラー:', err);
+        if (err.name === 'NotAllowedError') showInfo('❌ マイクの使用が許可されていません');
+        else if (err.name === 'NotFoundError') showInfo('❌ マイクが見つかりません');
+        else if (location.protocol === 'file:') showInfo('⚠️ ローカルファイルではマイクが使えません');
+        else showInfo('❌ マイクエラー: ' + err.message);
+        micBtn.textContent = '🎤 マイク';
+        micBtn.classList.remove('active');
+      }
+    }
+
+    function stopMic() {
+      if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+      if (source) { try { source.disconnect(); } catch (e) {} source = null; }
+      isMicActive = false;
+      isRunning = false;
+      document.getElementById('micBtn').textContent = '🎤 マイク';
+      document.getElementById('micBtn').classList.remove('active');
+      showInfo('🎵 マイクを停止しました');
+    }
+
+    // ファイル
+    function handleFile(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      stopCurrentSource();
+      initAudioContext();
+
+      if (audioElement) { audioElement.pause(); audioElement.remove(); audioElement = null; }
+      currentFileName = file.name;
+
+      audioElement = document.createElement('audio');
+      audioElement.src = URL.createObjectURL(file);
+      audioElement.crossOrigin = 'anonymous';
+
+      audioElement.addEventListener('canplaythrough', () => {
+        source = audioContext.createMediaElementSource(audioElement);
+        source.connect(analyser);
+        analyser.connect(audioContext.destination);
+        audioElement.play();
+        isRunning = true;
+        isAudioPlaying = true;
+
+        document.getElementById('micBtn').textContent = '🎤 マイク';
+        document.getElementById('micBtn').classList.remove('active');
+        const playBtn = document.getElementById('playBtn');
+        playBtn.style.display = 'inline-block';
+        playBtn.textContent = '⏸️';
+        playBtn.classList.add('active');
+        showInfo('🎵 再生中: ' + file.name);
+      }, { once: true });
+
+      audioElement.addEventListener('ended', () => {
+        isAudioPlaying = false;
+        document.getElementById('playBtn').textContent = '▶️';
+        document.getElementById('playBtn').classList.remove('active');
+        showInfo('🎵 再生終了: ' + file.name);
+      });
+
+      audioElement.addEventListener('error', () => {
+        showInfo('❌ 音声ファイルの読み込みに失敗');
+        document.getElementById('playBtn').style.display = 'none';
+      });
+    }
+
+    function toggleAudioPlayback() {
+      if (!audioElement) return;
+      const playBtn = document.getElementById('playBtn');
+      if (isAudioPlaying) {
+        audioElement.pause();
+        isAudioPlaying = false;
+        playBtn.textContent = '▶️';
+        playBtn.classList.remove('active');
+        showInfo('⏸️ 一時停止: ' + currentFileName);
+      } else {
+        audioElement.play();
+        isAudioPlaying = true;
+        isRunning = true;
+        playBtn.textContent = '⏸️';
+        playBtn.classList.add('active');
+        showInfo('🎵 再生中: ' + currentFileName);
+      }
+    }
+
+    function stopCurrentSource() {
+      if (isMicActive) stopMic();
+      if (source) { try { source.disconnect(); } catch (e) {} source = null; }
+      if (audioElement) { audioElement.pause(); isAudioPlaying = false; }
+      document.getElementById('playBtn').style.display = 'none';
+    }
+
+    // 背景メディアをアスペクト比を考慮して描画
+    function drawMediaWithFit(media, mediaWidth, mediaHeight) {
+      const canvasWidth = canvas.width;
+      const canvasHeight = canvas.height;
+
+      let drawX, drawY, drawWidth, drawHeight;
+
+      if (settings.bgFitMode === 'stretch') {
+        // 引き伸ばし（従来の動作）
+        drawX = 0;
+        drawY = 0;
+        drawWidth = canvasWidth;
+        drawHeight = canvasHeight;
+      } else {
+        const mediaRatio = mediaWidth / mediaHeight;
+        const canvasRatio = canvasWidth / canvasHeight;
+
+        if (settings.bgFitMode === 'cover') {
+          // カバー：画面を埋める（はみ出しは切り取り）
+          if (canvasRatio > mediaRatio) {
+            drawWidth = canvasWidth;
+            drawHeight = canvasWidth / mediaRatio;
+          } else {
+            drawHeight = canvasHeight;
+            drawWidth = canvasHeight * mediaRatio;
+          }
+        } else {
+          // contain/フィット：全体を表示（余白あり）
+          if (canvasRatio > mediaRatio) {
+            drawHeight = canvasHeight;
+            drawWidth = canvasHeight * mediaRatio;
+          } else {
+            drawWidth = canvasWidth;
+            drawHeight = canvasWidth / mediaRatio;
+          }
+        }
+
+        // 中央に配置
+        drawX = (canvasWidth - drawWidth) / 2;
+        drawY = (canvasHeight - drawHeight) / 2;
+      }
+
+      ctx.drawImage(media, drawX, drawY, drawWidth, drawHeight);
+    }
+
+    // アニメーション
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // 背景描画
+      if (hasBgMedia) {
+        // 背景メディアがある場合
+        ctx.fillStyle = `rgba(0, 0, 0, ${1 - settings.bgOpacity})`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.globalAlpha = settings.bgOpacity;
+        if (bgVideo && !bgVideo.paused) {
+          drawMediaWithFit(bgVideo, bgVideo.videoWidth, bgVideo.videoHeight);
+        } else if (bgImage) {
+          drawMediaWithFit(bgImage, bgImage.width, bgImage.height);
+        }
+        ctx.globalAlpha = 1;
+
+        // 残像
+        ctx.fillStyle = `rgba(0, 0, 0, ${settings.trailEffect})`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      } else {
+        // 背景色
+        const bg = settings.bgColor;
+        ctx.fillStyle = `rgba(${bg[0]}, ${bg[1]}, ${bg[2]}, ${settings.trailEffect})`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+
+      // 周波数データ
+      let spectrum = new Uint8Array(256);
+      let bass = 0, mid = 0, level = 0;
+
+      if (analyser && isRunning) {
+        analyser.getByteFrequencyData(dataArray);
+        spectrum = dataArray;
+
+        let bassSum = 0, midSum = 0;
+        const bassEnd = Math.floor(bufferLength * 0.1);
+        const midEnd = Math.floor(bufferLength * 0.5);
+
+        for (let i = 0; i < bufferLength; i++) {
+          if (i < bassEnd) bassSum += dataArray[i];
+          else if (i < midEnd) midSum += dataArray[i];
+          level += dataArray[i];
+        }
+
+        bass = (bassSum / bassEnd) * settings.sensitivity;
+        mid = (midSum / (midEnd - bassEnd)) * settings.sensitivity;
+        level = (level / bufferLength / 255) * settings.sensitivity;
+      }
+
+      ctx.save();
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.scale(settings.sizeScale, settings.sizeScale);
+
+      switch (mode) {
+        case 'circles': drawCircles(spectrum, bass, level); break;
+        case 'bars': drawBars(spectrum, level); break;
+        case 'wave': drawWave(spectrum, bass, level); break;
+        case 'spiral': drawSpiral(spectrum, bass, level); break;
+        case 'geometric': drawGeometric(spectrum, bass, level); break;
+        case 'flower': drawFlower(spectrum, bass, level); break;
+        case 'pulse': drawPulse(spectrum, bass, level); break;
+        case 'kaleidoscope': drawKaleidoscope(spectrum, bass, level); break;
+        case 'mesh': drawMesh(spectrum, bass, level); break;
+        case 'crystal': drawCrystal(spectrum, bass, level); break;
+      }
+
+      if (settings.showParticles) {
+        for (let p of particles) { p.update(level, bass); p.draw(ctx); }
+      }
+
+      ctx.restore();
+      angleOffset += (0.01 + level * 0.05) * settings.rotationSpeed;
+    }
+
+    // 描画関数
+    function drawCircles(spectrum, bass, level) {
+      for (let j = 0; j < 5; j++) {
+        const baseRadius = 50 + j * 60;
+        ctx.save();
+        ctx.rotate(angleOffset * (j % 2 === 0 ? 1 : -1));
+        ctx.strokeStyle = getColor(j, 5, 0.8);
+        ctx.lineWidth = settings.lineWidth + level * 5;
+        ctx.beginPath();
+
+        // より多くのポイントでなめらかな円を描画
+        const points = 128;
+        for (let i = 0; i <= points; i++) {
+          const angle = (i / points) * Math.PI * 2;
+          const specIndex = Math.floor((i / points) * (spectrum.length / 4));
+          // 補間処理でなめらかに
+          const nextIndex = Math.min(specIndex + 1, spectrum.length - 1);
+          const t = ((i / points) * (spectrum.length / 4)) - specIndex;
+          const interpolatedValue = (spectrum[specIndex] || 0) * (1 - t) + (spectrum[nextIndex] || 0) * t;
+          const r = baseRadius + interpolatedValue * (0.5 + j * 0.2);
+          if (i === 0) ctx.moveTo(r * Math.cos(angle), r * Math.sin(angle));
+          else ctx.lineTo(r * Math.cos(angle), r * Math.sin(angle));
+        }
+        ctx.closePath();
+        ctx.stroke();
+        ctx.restore();
+      }
+      // 中央の円（設定で表示/非表示）
+      if (settings.showCenterCircle) {
+        const pulseSize = 30 + bass * 0.8;
+        ctx.fillStyle = getColor(0, 5, 0.6);
+        ctx.beginPath();
+        ctx.arc(0, 0, pulseSize, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function drawBars(spectrum, level) {
+      const numBars = 64;
+      // 線の太さに応じて全体幅を調整（細いときは狭く、太いときは広く）
+      const widthRatio = 0.3 + (settings.lineWidth / 10) * 0.5; // 0.3〜0.8
+      const totalWidth = (canvas.width / settings.sizeScale) * widthRatio;
+      const barWidth = totalWidth / numBars;
+      const gap = 1; // 固定の小さな隙間
+      const actualBarWidth = Math.max(barWidth - gap, 2);
+
+      ctx.save();
+      ctx.translate(-totalWidth / 2, 0);
+
+      for (let i = 0; i < numBars; i++) {
+        const specIndex = Math.floor((i / numBars) * (spectrum.length / 2));
+        const barHeight = (spectrum[specIndex] || 0) * 1.2 * settings.sizeScale;
+
+        ctx.fillStyle = getColor(i, numBars, 0.8);
+        ctx.fillRect(i * barWidth, 0, actualBarWidth, -barHeight);
+        ctx.fillRect(i * barWidth, 0, actualBarWidth, barHeight);
+      }
+      ctx.restore();
+    }
+
+    function drawWave(spectrum, bass, level) {
+      for (let j = 0; j < 3; j++) {
+        ctx.save();
+        ctx.rotate(j * 0.1 + angleOffset * 0.5);
+        ctx.scale(1 + j * 0.2, 1 + j * 0.2);
+        ctx.strokeStyle = getColor(j, 3, 0.7);
+        ctx.lineWidth = settings.lineWidth + (2 - j);
+        ctx.beginPath();
+
+        // より多くのポイントとスプライン補間でなめらかに
+        const points = [];
+        const step = Math.max(1, Math.floor(spectrum.length / (50 * settings.smoothness)));
+        for (let i = 0; i < spectrum.length; i += step) {
+          const x = ((i / spectrum.length) - 0.5) * (canvas.width / settings.sizeScale);
+          const y = ((spectrum[i] || 128) - 128) * 2 * (1 + bass / 255);
+          points.push({ x, y });
+        }
+
+        // スプライン曲線で描画
+        if (points.length > 2) {
+          ctx.moveTo(points[0].x, points[0].y);
+          for (let i = 0; i < points.length - 1; i++) {
+            const p0 = points[Math.max(0, i - 1)];
+            const p1 = points[i];
+            const p2 = points[i + 1];
+            const p3 = points[Math.min(points.length - 1, i + 2)];
+
+            // Catmull-Rom スプライン補間
+            for (let t = 0; t <= 1; t += 0.1) {
+              const t2 = t * t;
+              const t3 = t2 * t;
+              const x = 0.5 * ((2 * p1.x) + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3);
+              const y = 0.5 * ((2 * p1.y) + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3);
+              ctx.lineTo(x, y);
+            }
+          }
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
+      // 中央のグロー（設定で表示/非表示）
+      if (settings.showCenterCircle) {
+        const glowSize = 100 + level * 500;
+        for (let i = 3; i > 0; i--) {
+          ctx.fillStyle = getColor(0, 5, 0.03 * i);
+          ctx.beginPath();
+          ctx.arc(0, 0, (glowSize * i) / 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+
+    function drawSpiral(spectrum, bass, level) {
+      for (let arm = 0; arm < 6; arm++) {
+        ctx.strokeStyle = getColor(arm, 6, 0.8);
+        ctx.lineWidth = settings.lineWidth + level * 3;
+        ctx.beginPath();
+
+        // より多くのポイントでなめらかなスパイラル
+        const points = 120;
+        for (let i = 0; i < points; i++) {
+          const angle = (arm * Math.PI * 2) / 6 + i * 0.12 + angleOffset;
+          const specIndex = Math.floor((i / points) * (spectrum.length / 2));
+          // 補間処理
+          const nextIndex = Math.min(specIndex + 1, spectrum.length - 1);
+          const t = ((i / points) * (spectrum.length / 2)) - specIndex;
+          const interpolatedValue = (spectrum[specIndex] || 0) * (1 - t) + (spectrum[nextIndex] || 0) * t;
+          const r = i * 3.5 + interpolatedValue * 0.5;
+          if (i === 0) ctx.moveTo(r * Math.cos(angle), r * Math.sin(angle));
+          else ctx.lineTo(r * Math.cos(angle), r * Math.sin(angle));
+        }
+        ctx.stroke();
+      }
+      // 中央の円（設定で表示/非表示）
+      if (settings.showCenterCircle) {
+        const pulseSize = 20 + bass * 0.5;
+        for (let i = 3; i > 0; i--) {
+          ctx.fillStyle = `rgba(255, 255, 255, ${0.15 * i})`;
+          ctx.beginPath();
+          ctx.arc(0, 0, (pulseSize * i) / 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+
+    // 🔷 ジオメトリック（幾何学模様）
+    function drawGeometric(spectrum, bass, level) {
+      const shapes = [6, 5, 4, 3]; // 六角形、五角形、四角形、三角形
+
+      for (let layer = 0; layer < shapes.length; layer++) {
+        const sides = shapes[layer];
+        const baseRadius = 60 + layer * 80;
+
+        ctx.save();
+        ctx.rotate(angleOffset * (layer % 2 === 0 ? 1 : -0.7));
+
+        // 外側の形
+        ctx.strokeStyle = getColor(layer, shapes.length, 0.8);
+        ctx.lineWidth = settings.lineWidth + level * 2;
+        ctx.beginPath();
+
+        for (let i = 0; i <= sides; i++) {
+          const angle = (i / sides) * Math.PI * 2 - Math.PI / 2;
+          const specIndex = Math.floor((i / sides) * (spectrum.length / 4));
+          const r = baseRadius + (spectrum[specIndex] || 0) * 0.8;
+          if (i === 0) ctx.moveTo(r * Math.cos(angle), r * Math.sin(angle));
+          else ctx.lineTo(r * Math.cos(angle), r * Math.sin(angle));
+        }
+        ctx.closePath();
+        ctx.stroke();
+
+        // 内側の線（頂点から中心へ）
+        ctx.strokeStyle = getColor(layer, shapes.length, 0.3);
+        ctx.lineWidth = settings.lineWidth * 0.5;
+        for (let i = 0; i < sides; i++) {
+          const angle = (i / sides) * Math.PI * 2 - Math.PI / 2;
+          const specIndex = Math.floor((i / sides) * (spectrum.length / 4));
+          const r = baseRadius + (spectrum[specIndex] || 0) * 0.8;
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.lineTo(r * Math.cos(angle), r * Math.sin(angle));
+          ctx.stroke();
+        }
+
+        ctx.restore();
+      }
+
+      if (settings.showCenterCircle) {
+        const pulseSize = 25 + bass * 0.6;
+        ctx.fillStyle = getColor(0, 5, 0.5);
+        ctx.beginPath();
+        ctx.arc(0, 0, pulseSize, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // 🌸 フラワー（花模様）
+    function drawFlower(spectrum, bass, level) {
+      const petalCounts = [8, 12, 16];
+      const totalPetals = 36; // 8 + 12 + 16 = 36（事前計算）
+
+      for (let layer = 0; layer < petalCounts.length; layer++) {
+        const petals = petalCounts[layer];
+        const baseRadius = 80 + layer * 70;
+        const layerOffset = layer === 0 ? 0 : (layer === 1 ? 8 : 20); // 累積オフセット
+
+        ctx.save();
+        ctx.rotate(angleOffset * (layer % 2 === 0 ? 0.5 : -0.3));
+
+        for (let i = 0; i < petals; i++) {
+          const angle = (i / petals) * Math.PI * 2;
+          const specIndex = Math.floor((i / petals) * (spectrum.length / 3));
+          const petalLength = baseRadius + (spectrum[specIndex] || 0) * 0.6;
+          const petalWidth = 20 + (spectrum[specIndex] || 0) * 0.15;
+
+          ctx.save();
+          ctx.rotate(angle);
+
+          // 花びらを描画（ベジェ曲線）
+          const colorIndex = layerOffset + i;
+          ctx.fillStyle = getColor(colorIndex, totalPetals, 0.4);
+          ctx.strokeStyle = getColor(colorIndex, totalPetals, 0.8);
+          ctx.lineWidth = settings.lineWidth;
+
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.quadraticCurveTo(petalWidth, petalLength * 0.5, 0, petalLength);
+          ctx.quadraticCurveTo(-petalWidth, petalLength * 0.5, 0, 0);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.restore();
+        }
+        ctx.restore();
+      }
+
+      if (settings.showCenterCircle) {
+        // 花の中心
+        const centerSize = 30 + bass * 0.4;
+        for (let i = 3; i > 0; i--) {
+          ctx.fillStyle = `rgba(255, 220, 100, ${0.3 * i})`;
+          ctx.beginPath();
+          ctx.arc(0, 0, (centerSize * i) / 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+
+    // ⚡ パルス（同心円）- 動きを強化
+    function drawPulse(spectrum, bass, level) {
+      const numRings = 12;
+      const time = Date.now() * 0.001;
+      const sens = settings.sensitivity;
+
+      for (let i = 0; i < numRings; i++) {
+        const specIndex = Math.floor((i / numRings) * (spectrum.length / 2));
+        const intensity = (spectrum[specIndex] || 0) / 255 * sens;
+        const baseRadius = 30 + i * 35;
+
+        // 波のオフセットを大幅に強化
+        const waveOffset = Math.sin(time * 4 + i * 0.8) * 30 * (0.3 + intensity);
+        const pulseOffset = Math.sin(time * 6 + i * 0.3) * 20 * intensity;
+        const radius = baseRadius + waveOffset + pulseOffset + intensity * 80;
+
+        const alpha = 0.4 + intensity * 0.6;
+
+        ctx.strokeStyle = getColor(i, numRings, alpha);
+        ctx.lineWidth = settings.lineWidth + intensity * 6;
+
+        // 波打つ円を描画
+        ctx.beginPath();
+        for (let a = 0; a <= Math.PI * 2; a += 0.05) {
+          const wobble = Math.sin(a * 8 + time * 3) * 5 * intensity;
+          const r = radius + wobble;
+          if (a === 0) ctx.moveTo(r * Math.cos(a), r * Math.sin(a));
+          else ctx.lineTo(r * Math.cos(a), r * Math.sin(a));
+        }
+        ctx.closePath();
+        ctx.stroke();
+
+        // グロー効果（より積極的に）
+        if (intensity > 0.3) {
+          ctx.strokeStyle = getColor(i, numRings, intensity * 0.3);
+          ctx.lineWidth = settings.lineWidth * 4;
+          ctx.beginPath();
+          ctx.arc(0, 0, radius, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+
+      if (settings.showCenterCircle) {
+        const pulseSize = 25 + bass * 1.2 * sens;
+        // 脈動するコア
+        const coreWobble = Math.sin(time * 8) * 5;
+        ctx.fillStyle = `rgba(255, 255, 255, 0.9)`;
+        ctx.beginPath();
+        ctx.arc(0, 0, pulseSize + coreWobble, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // 🔺 カレイドスコープ（万華鏡）- 動きを強化
+    function drawKaleidoscope(spectrum, bass, level) {
+      const segments = 12;
+      const segmentAngle = (Math.PI * 2) / segments;
+      const time = Date.now() * 0.001;
+      const sens = settings.sensitivity;
+
+      ctx.save();
+      // 回転速度を上げ、音に反応させる
+      ctx.rotate(angleOffset * 0.8 + Math.sin(time * 2) * 0.1 * level * sens);
+
+      for (let seg = 0; seg < segments; seg++) {
+        ctx.save();
+        ctx.rotate(seg * segmentAngle);
+
+        // 三角形のセグメント内に模様を描画
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(400, 0);
+        ctx.lineTo(400 * Math.cos(segmentAngle), 400 * Math.sin(segmentAngle));
+        ctx.closePath();
+        ctx.clip();
+
+        // セグメント内の模様
+        for (let layer = 0; layer < 6; layer++) {
+          const specIndex = Math.floor((layer + seg) % (spectrum.length / 4));
+          const intensity = (spectrum[specIndex] || 0) / 255 * sens;
+
+          // より大きな動き
+          const pulseOffset = Math.sin(time * 4 + layer * 0.5 + seg * 0.3) * 20 * intensity;
+          const r1 = 40 + layer * 55 + intensity * 60 + pulseOffset;
+          const r2 = 70 + layer * 55 + intensity * 80 + pulseOffset;
+
+          ctx.strokeStyle = getColor(layer + seg, segments + 6, 0.8);
+          ctx.lineWidth = settings.lineWidth + intensity * 4;
+
+          // 弧を描画（波打たせる）
+          ctx.beginPath();
+          for (let a = 0; a <= segmentAngle; a += 0.02) {
+            const wobble = Math.sin(a * 10 + time * 5) * 3 * intensity;
+            const r = r1 + wobble;
+            if (a === 0) ctx.moveTo(r, 0);
+            else ctx.lineTo(r * Math.cos(a), r * Math.sin(a));
+          }
+          ctx.stroke();
+
+          // 放射線（脈動させる）
+          ctx.beginPath();
+          ctx.moveTo(r1, 0);
+          ctx.lineTo(r2, 0);
+          ctx.stroke();
+
+          // ミラー側
+          ctx.beginPath();
+          ctx.moveTo(r1 * Math.cos(segmentAngle), r1 * Math.sin(segmentAngle));
+          ctx.lineTo(r2 * Math.cos(segmentAngle), r2 * Math.sin(segmentAngle));
+          ctx.stroke();
+
+          // 追加の装飾線
+          if (intensity > 0.3) {
+            const midAngle = segmentAngle / 2;
+            ctx.beginPath();
+            ctx.moveTo(r1 * 0.7 * Math.cos(midAngle), r1 * 0.7 * Math.sin(midAngle));
+            ctx.lineTo(r2 * Math.cos(midAngle), r2 * Math.sin(midAngle));
+            ctx.stroke();
+          }
+        }
+
+        ctx.restore();
+      }
+      ctx.restore();
+
+      if (settings.showCenterCircle) {
+        const centerSize = 30 + bass * 0.8 * sens;
+        const wobble = Math.sin(time * 6) * 5;
+        for (let i = 0; i < segments; i++) {
+          ctx.fillStyle = getColor(i, segments, 0.4);
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.arc(0, 0, centerSize + wobble, i * segmentAngle, (i + 1) * segmentAngle);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+    }
+
+    // 🌐 メッシュ（網目）- 動きを強化
+    function drawMesh(spectrum, bass, level) {
+      const gridSize = 12;
+      const cellSize = 50;
+      const offsetX = -(gridSize * cellSize) / 2;
+      const offsetY = -(gridSize * cellSize) / 2;
+      const time = Date.now() * 0.001;
+      const sens = settings.sensitivity;
+
+      ctx.save();
+      // 回転を音に反応させる
+      ctx.rotate(angleOffset * 0.5 + Math.sin(time) * 0.05 * level * sens);
+
+      // 全体のスケールも音に反応
+      const scale = 1 + level * 0.2 * sens;
+      ctx.scale(scale, scale);
+
+      for (let y = 0; y <= gridSize; y++) {
+        for (let x = 0; x <= gridSize; x++) {
+          const specIndex = Math.floor(((x + y) / (gridSize * 2)) * (spectrum.length / 2));
+          const intensity = (spectrum[specIndex] || 0) / 255 * sens;
+
+          // 波打つ効果を大幅に強化（複数の波を重ねる）
+          const wave1 = Math.sin(time * 4 + x * 0.6 + y * 0.4) * 25 * (0.3 + intensity);
+          const wave2 = Math.cos(time * 3 + x * 0.3 - y * 0.5) * 15 * intensity;
+          const wave3 = Math.sin(time * 5 + (x + y) * 0.2) * 10 * intensity;
+          const waveX = Math.sin(time * 3 + y * 0.4) * 15 * intensity;
+
+          const px = offsetX + x * cellSize + waveX;
+          const py = offsetY + y * cellSize + wave1 + wave2 + wave3;
+
+          // 点を描画（サイズも変動）
+          const pointSize = settings.lineWidth + intensity * 8 + Math.sin(time * 6 + x + y) * 2;
+          ctx.fillStyle = getColor(x + y * gridSize, gridSize * gridSize, 0.6 + intensity * 0.4);
+          ctx.beginPath();
+          ctx.arc(px, py, pointSize, 0, Math.PI * 2);
+          ctx.fill();
+
+          // 横線
+          if (x < gridSize) {
+            const nextSpecIndex = Math.floor(((x + 1 + y) / (gridSize * 2)) * (spectrum.length / 2));
+            const nextIntensity = (spectrum[nextSpecIndex] || 0) / 255 * sens;
+            const nextWave1 = Math.sin(time * 4 + (x + 1) * 0.6 + y * 0.4) * 25 * (0.3 + nextIntensity);
+            const nextWave2 = Math.cos(time * 3 + (x + 1) * 0.3 - y * 0.5) * 15 * nextIntensity;
+            const nextWave3 = Math.sin(time * 5 + (x + 1 + y) * 0.2) * 10 * nextIntensity;
+            const nextWaveX = Math.sin(time * 3 + y * 0.4) * 15 * nextIntensity;
+            const nextPx = offsetX + (x + 1) * cellSize + nextWaveX;
+            const nextPy = offsetY + y * cellSize + nextWave1 + nextWave2 + nextWave3;
+
+            ctx.strokeStyle = getColor(x + y * gridSize, gridSize * gridSize, 0.4 + intensity * 0.5);
+            ctx.lineWidth = settings.lineWidth * 0.8 + intensity * 2;
+            ctx.beginPath();
+            ctx.moveTo(px, py);
+            ctx.lineTo(nextPx, nextPy);
+            ctx.stroke();
+          }
+
+          // 縦線
+          if (y < gridSize) {
+            const nextSpecIndex = Math.floor(((x + y + 1) / (gridSize * 2)) * (spectrum.length / 2));
+            const nextIntensity = (spectrum[nextSpecIndex] || 0) / 255 * sens;
+            const nextWave1 = Math.sin(time * 4 + x * 0.6 + (y + 1) * 0.4) * 25 * (0.3 + nextIntensity);
+            const nextWave2 = Math.cos(time * 3 + x * 0.3 - (y + 1) * 0.5) * 15 * nextIntensity;
+            const nextWave3 = Math.sin(time * 5 + (x + y + 1) * 0.2) * 10 * nextIntensity;
+            const nextPy = offsetY + (y + 1) * cellSize + nextWave1 + nextWave2 + nextWave3;
+
+            ctx.strokeStyle = getColor(x + y * gridSize, gridSize * gridSize, 0.4 + intensity * 0.5);
+            ctx.lineWidth = settings.lineWidth * 0.8 + intensity * 2;
+            ctx.beginPath();
+            ctx.moveTo(px, py);
+            ctx.lineTo(px + Math.sin(time * 3 + (y + 1) * 0.4) * 15 * nextIntensity, nextPy);
+            ctx.stroke();
+          }
+        }
+      }
+      ctx.restore();
+    }
+
+    // 💎 クリスタル（結晶）
+    function drawCrystal(spectrum, bass, level) {
+      const crystalCount = 6;
+      const time = Date.now() * 0.001;
+
+      for (let c = 0; c < crystalCount; c++) {
+        const angle = (c / crystalCount) * Math.PI * 2 + angleOffset;
+        const specIndex = Math.floor((c / crystalCount) * (spectrum.length / 3));
+        const intensity = (spectrum[specIndex] || 0) / 255;
+
+        const distance = 120 + intensity * 80;
+        const cx = Math.cos(angle) * distance;
+        const cy = Math.sin(angle) * distance;
+
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(angle + time * 0.5);
+
+        // 結晶の形（八面体風）
+        const size = 30 + intensity * 50 + bass * 0.3;
+        const points = 8;
+
+        // 外側の輪郭
+        ctx.strokeStyle = getColor(c, crystalCount, 0.9);
+        ctx.fillStyle = getColor(c, crystalCount, 0.2);
+        ctx.lineWidth = settings.lineWidth;
+
+        ctx.beginPath();
+        for (let i = 0; i <= points; i++) {
+          const a = (i / points) * Math.PI * 2;
+          const r = size * (i % 2 === 0 ? 1 : 0.6);
+          if (i === 0) ctx.moveTo(r * Math.cos(a), r * Math.sin(a));
+          else ctx.lineTo(r * Math.cos(a), r * Math.sin(a));
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // 内側の線
+        ctx.strokeStyle = `rgba(255, 255, 255, ${0.3 + intensity * 0.4})`;
+        ctx.lineWidth = settings.lineWidth * 0.5;
+        for (let i = 0; i < points; i += 2) {
+          const a = (i / points) * Math.PI * 2;
+          const r = size;
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.lineTo(r * Math.cos(a), r * Math.sin(a));
+          ctx.stroke();
+        }
+
+        ctx.restore();
+      }
+
+      // 中央の大きな結晶
+      if (settings.showCenterCircle) {
+        const centerSize = 40 + bass * 0.6;
+        const centerPoints = 12;
+
+        ctx.save();
+        ctx.rotate(angleOffset * -0.5);
+
+        ctx.strokeStyle = `rgba(255, 255, 255, 0.8)`;
+        ctx.fillStyle = getColor(0, 5, 0.3);
+        ctx.lineWidth = settings.lineWidth + 1;
+
+        ctx.beginPath();
+        for (let i = 0; i <= centerPoints; i++) {
+          const a = (i / centerPoints) * Math.PI * 2;
+          const specIdx = Math.floor((i / centerPoints) * (spectrum.length / 4));
+          const r = centerSize * (i % 2 === 0 ? 1 : 0.5) + (spectrum[specIdx] || 0) * 0.1;
+          if (i === 0) ctx.moveTo(r * Math.cos(a), r * Math.sin(a));
+          else ctx.lineTo(r * Math.cos(a), r * Math.sin(a));
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.restore();
+      }
+    }
+
+    // パーティクル
+    class Particle {
+      constructor() { this.reset(); }
+      reset() {
+        this.angle = Math.random() * Math.PI * 2;
+        this.radius = 50 + Math.random() * 250;
+        this.speed = 0.01 + Math.random() * 0.02;
+        this.size = 2 + Math.random() * 4;
+        this.colorIndex = Math.floor(Math.random() * 100); // より多くのバリエーション
+      }
+      update(level, bass) {
+        this.angle += this.speed * (1 + level * 3) * settings.rotationSpeed;
+        this.radius += (bass / 255 - 0.5) * 2;
+        if (this.radius < 20 || this.radius > 400) this.reset();
+      }
+      draw(ctx) {
+        ctx.fillStyle = getColor(this.colorIndex, 100, 0.7);
+        ctx.beginPath();
+        ctx.arc(this.radius * Math.cos(this.angle), this.radius * Math.sin(this.angle), this.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  </script>
+</body>
+</html>
