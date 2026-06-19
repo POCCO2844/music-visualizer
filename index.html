@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>音楽ビジュアライザー</title>
+  <!-- FFmpeg.wasm 0.11.x (旧API、SharedArrayBuffer不要) -->
+  <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js" crossorigin="anonymous"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -242,6 +244,40 @@
       display: none;
     }
     #recordingIndicator.show { display: block; }
+
+    #convertingOverlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.85);
+      z-index: 200;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+    }
+    #convertingOverlay.show { display: flex; }
+    #convertingOverlay h2 { font-size: 22px; color: #fff; }
+    #convertingOverlay p { font-size: 14px; color: rgba(255,255,255,0.7); text-align: center; max-width: 400px; }
+    #convertProgress {
+      width: 320px;
+      height: 10px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 5px;
+      overflow: hidden;
+    }
+    #convertProgressBar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #667eea, #38ef7d);
+      border-radius: 5px;
+      transition: width 0.3s ease;
+    }
+    #convertStatus {
+      font-size: 12px;
+      color: rgba(255,255,255,0.5);
+    }
   </style>
 </head>
 <body>
@@ -273,6 +309,13 @@
   <button id="settingsToggle">⚙️</button>
 
   <div id="recordingIndicator">🔴 録画中...</div>
+
+  <div id="convertingOverlay">
+    <h2>🎬 MP4に変換中...</h2>
+    <div id="convertProgress"><div id="convertProgressBar"></div></div>
+    <div id="convertStatus">準備中...</div>
+    <p>そのままお待ちください。変換が完了すると自動的にダウンロードが始まります。</p>
+  </div>
 
   <div id="settingsPanel">
     <h3>🎨 ビジュアル調整</h3>
@@ -447,8 +490,8 @@
     <div class="setting-group">
       <label>音声</label>
       <select id="recordAudio" style="width: 100%;">
-        <option value="yes">音声あり（VLCで再生推奨）</option>
-        <option value="no">音声なし（Windows Media Playerで再生可）</option>
+        <option value="yes">音声あり</option>
+        <option value="no">音声なし</option>
       </select>
     </div>
 
@@ -459,9 +502,8 @@
       </div>
     </div>
 
-    <div class="setting-group" style="background: rgba(255,200,0,0.1); padding: 10px; border-radius: 8px; margin-top: 10px;">
-      <label style="color: #ffcc00; font-size: 10px;">💡 ヒント: 録画ファイルが再生できない場合は、VLC Media Player（無料）をお使いください。<br>
-      <a href="https://www.videolan.org/vlc/" target="_blank" style="color: #88ccff;">https://www.videolan.org/vlc/</a></label>
+    <div class="setting-group" style="background: rgba(100,200,100,0.1); padding: 10px; border-radius: 8px; margin-top: 10px;">
+      <label style="color: #88ff88; font-size: 10px;">✅ 録画停止後、自動的にMP4（H.264）に変換してダウンロードします。変換には数秒〜数十秒かかります。</label>
     </div>
 
     <div class="setting-group">
@@ -503,6 +545,8 @@
     let mediaRecorder = null;
     let recordedChunks = [];
     let isRecording = false;
+    let ffmpegLoaded = false;
+    let ffmpegInstance = null;
 
     // 設定
     let settings = {
@@ -568,6 +612,9 @@
         setupSettingsListeners();
         animate();
         console.log('初期化完了');
+
+        // FFmpegをバックグラウンドでプリロード開始（初回録画時の待ち時間を短縮）
+        setTimeout(() => loadFFmpeg(), 2000);
       } catch (err) {
         console.error('初期化エラー:', err);
         alert('初期化エラー: ' + err.message);
@@ -646,6 +693,30 @@
       showInfo('🗑️ 背景をクリアしました');
     }
 
+    // FFmpeg初期化（バックグラウンドでロード）
+    async function loadFFmpeg() {
+      if (ffmpegLoaded) return ffmpegInstance;
+      try {
+        const { createFFmpeg } = FFmpeg;
+        ffmpegInstance = createFFmpeg({
+          log: false,
+          corePath: 'https://unpkg.com/@ffmpeg/core-st@0.11.1/dist/ffmpeg-core.js',
+          progress: ({ ratio }) => {
+            const pct = Math.round(ratio * 100);
+            document.getElementById('convertProgressBar').style.width = pct + '%';
+            document.getElementById('convertStatus').textContent = `変換中... ${pct}%`;
+          }
+        });
+        await ffmpegInstance.load();
+        ffmpegLoaded = true;
+        console.log('FFmpeg.wasm ロード完了');
+        return ffmpegInstance;
+      } catch (e) {
+        console.error('FFmpeg.wasm ロード失敗:', e);
+        return null;
+      }
+    }
+
     // 録画トグル
     function toggleRecording() {
       if (isRecording) {
@@ -661,7 +732,6 @@
 
       // 冒頭から録画する場合、メディアを巻き戻して再生
       if (settings.recordFromStart) {
-        // 音楽を冒頭に戻す
         if (audioElement) {
           audioElement.currentTime = 0;
           audioElement.play();
@@ -673,102 +743,77 @@
             playBtn.classList.add('active');
           }
         }
-        // 背景動画を冒頭に戻す
         if (bgVideo) {
           bgVideo.currentTime = 0;
           bgVideo.play();
         }
       }
 
-      // 品質設定
+      // 品質設定（WebM録画は高ビットレートで行う）
       let videoBitsPerSecond;
       switch (settings.recordQuality) {
-        case 'high': videoBitsPerSecond = 8000000; break;
-        case 'low': videoBitsPerSecond = 1000000; break;
-        default: videoBitsPerSecond = 4000000;
+        case 'high':   videoBitsPerSecond = 25000000; break;  // 25Mbps
+        case 'low':    videoBitsPerSecond =  4000000; break;  //  4Mbps
+        default:       videoBitsPerSecond = 12000000;          // 12Mbps
       }
 
-      // キャンバスからストリームを取得
-      const canvasStream = canvas.captureStream(30);
+      // キャンバスストリーム
+      const canvasStream = canvas.captureStream(60);
 
-      // 音声を含める場合のみ追加
-      let combinedStream = canvasStream;
+      // 音声トラック追加
       if (settings.recordAudio === 'yes' && audioContext && audioContext.state === 'running') {
         try {
           const dest = audioContext.createMediaStreamDestination();
           analyser.connect(dest);
-          const audioTracks = dest.stream.getAudioTracks();
-          audioTracks.forEach(track => canvasStream.addTrack(track));
+          dest.stream.getAudioTracks().forEach(t => canvasStream.addTrack(t));
         } catch (e) {
-          console.log('音声トラックの追加に失敗:', e);
+          console.log('音声トラック追加失敗:', e);
         }
       }
 
-      // サポートされる形式を確認（MP4優先）
-      let mimeType = '';
-      let fileExtension = '';
-
-      const mimeTypes = [
-        { type: 'video/mp4;codecs=avc1', ext: 'mp4' },
-        { type: 'video/mp4', ext: 'mp4' },
-        { type: 'video/webm;codecs=vp9', ext: 'webm' },
-        { type: 'video/webm;codecs=vp8', ext: 'webm' },
-        { type: 'video/webm', ext: 'webm' }
+      // WebM形式で録画（ブラウザが確実にサポートしている形式）
+      const webmTypes = [
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp9',
+        'video/webm;codecs=vp8,opus',
+        'video/webm;codecs=vp8',
+        'video/webm',
       ];
-
-      for (const format of mimeTypes) {
-        if (MediaRecorder.isTypeSupported(format.type)) {
-          mimeType = format.type;
-          fileExtension = format.ext;
-          break;
-        }
+      let mimeType = '';
+      for (const t of webmTypes) {
+        if (MediaRecorder.isTypeSupported(t)) { mimeType = t; break; }
       }
-
       if (!mimeType) {
         showInfo('❌ お使いのブラウザは録画をサポートしていません');
         return;
       }
 
       try {
-        mediaRecorder = new MediaRecorder(combinedStream, {
-          mimeType: mimeType,
-          videoBitsPerSecond: videoBitsPerSecond
-        });
+        mediaRecorder = new MediaRecorder(canvasStream, { mimeType, videoBitsPerSecond });
       } catch (e) {
-        showInfo('❌ 録画の開始に失敗しました: ' + e.message);
+        showInfo('❌ 録画開始失敗: ' + e.message);
         return;
       }
 
-      // 録画形式を保存
-      mediaRecorder._fileExtension = fileExtension;
-      mediaRecorder._mimeType = mimeType;
-
       mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          recordedChunks.push(e.data);
-        }
+        if (e.data.size > 0) recordedChunks.push(e.data);
       };
 
-      mediaRecorder.onstop = () => {
-        const ext = mediaRecorder._fileExtension || 'webm';
-        const mime = mediaRecorder._mimeType || 'video/webm';
-        const blob = new Blob(recordedChunks, { type: mime });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'visualizer-' + Date.now() + '.' + ext;
-        a.click();
-        URL.revokeObjectURL(url);
-        showInfo('🎥 録画を保存しました！（' + ext.toUpperCase() + '形式）');
+      mediaRecorder.onstop = async () => {
+        const webmBlob = new Blob(recordedChunks, { type: 'video/webm' });
+        await convertToMp4(webmBlob);
       };
 
-      mediaRecorder.start(100);
+      mediaRecorder.start(500);
       isRecording = true;
 
       document.getElementById('recordBtn').textContent = '⏹️ 録画停止';
       document.getElementById('recordBtn').classList.add('recording');
       document.getElementById('recordingIndicator').classList.add('show');
-      showInfo('🔴 録画中...');
+      showInfo('🔴 録画中... 停止ボタンを押すとMP4に変換されます');
+
+      // バックグラウンドでFFmpegをロード開始
+      loadFFmpeg();
     }
 
     // 録画停止
@@ -777,10 +822,99 @@
         mediaRecorder.stop();
       }
       isRecording = false;
-
       document.getElementById('recordBtn').textContent = '⏺️ 録画開始';
       document.getElementById('recordBtn').classList.remove('recording');
       document.getElementById('recordingIndicator').classList.remove('show');
+      showInfo('⏳ 変換中... しばらくお待ちください');
+    }
+
+    // WebM → MP4 変換
+    async function convertToMp4(webmBlob) {
+      const overlay = document.getElementById('convertingOverlay');
+      const progressBar = document.getElementById('convertProgressBar');
+      const statusEl = document.getElementById('convertStatus');
+
+      overlay.classList.add('show');
+      progressBar.style.width = '0%';
+      statusEl.textContent = 'FFmpegを準備中...';
+
+      try {
+        const ffmpeg = await loadFFmpeg();
+
+        if (!ffmpeg) {
+          overlay.classList.remove('show');
+          downloadBlob(webmBlob, 'visualizer-' + Date.now() + '.webm');
+          showInfo('⚠️ MP4変換に失敗しました。WebMでダウンロードします。');
+          return;
+        }
+
+        statusEl.textContent = 'データを読み込み中...';
+        progressBar.style.width = '5%';
+
+        // WebMデータをFFmpegの仮想FSに書き込む
+        const { fetchFile } = FFmpeg;
+        ffmpeg.FS('writeFile', 'input.webm', await fetchFile(webmBlob));
+
+        statusEl.textContent = '変換中...';
+        progressBar.style.width = '10%';
+
+        // CRF値（品質）を設定
+        let crf;
+        switch (settings.recordQuality) {
+          case 'high': crf = '18'; break;
+          case 'low':  crf = '28'; break;
+          default:     crf = '22';
+        }
+
+        // FFmpegでMP4に変換（H.264 + AAC）
+        await ffmpeg.run(
+          '-i', 'input.webm',
+          '-c:v', 'libx264',
+          '-preset', 'fast',
+          '-crf', crf,
+          '-pix_fmt', 'yuv420p',
+          '-c:a', 'aac',
+          '-b:a', '192k',
+          '-movflags', '+faststart',
+          'output.mp4'
+        );
+
+        statusEl.textContent = 'ファイルを生成中...';
+        progressBar.style.width = '95%';
+
+        const data = ffmpeg.FS('readFile', 'output.mp4');
+        const mp4Blob = new Blob([data.buffer], { type: 'video/mp4' });
+
+        // クリーンアップ
+        try {
+          ffmpeg.FS('unlink', 'input.webm');
+          ffmpeg.FS('unlink', 'output.mp4');
+        } catch (e) {}
+
+        progressBar.style.width = '100%';
+        statusEl.textContent = '完了！';
+
+        setTimeout(() => {
+          overlay.classList.remove('show');
+          downloadBlob(mp4Blob, 'visualizer-' + Date.now() + '.mp4');
+          showInfo('✅ MP4のダウンロードが始まりました！');
+        }, 500);
+
+      } catch (err) {
+        console.error('MP4変換エラー:', err);
+        overlay.classList.remove('show');
+        downloadBlob(webmBlob, 'visualizer-' + Date.now() + '.webm');
+        showInfo('⚠️ MP4変換に失敗。WebMでダウンロードしました。(詳細: ' + err.message + ')');
+      }
+    }
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
     }
 
     // 設定リスナー
@@ -1211,21 +1345,18 @@
 
       // 背景描画
       if (hasBgMedia) {
-        // 背景メディアがある場合
-        ctx.fillStyle = `rgba(0, 0, 0, ${1 - settings.bgOpacity})`;
+        // 背景メディアがある場合：残像を先に適用
+        ctx.fillStyle = `rgba(0, 0, 0, ${settings.trailEffect})`;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        ctx.globalAlpha = settings.bgOpacity;
+        // 背景画像/動画を透明度を下げて描画（残像が見えるように）
+        ctx.globalAlpha = settings.bgOpacity * settings.trailEffect * 2;
         if (bgVideo && !bgVideo.paused) {
           drawMediaWithFit(bgVideo, bgVideo.videoWidth, bgVideo.videoHeight);
         } else if (bgImage) {
           drawMediaWithFit(bgImage, bgImage.width, bgImage.height);
         }
         ctx.globalAlpha = 1;
-
-        // 残像
-        ctx.fillStyle = `rgba(0, 0, 0, ${settings.trailEffect})`;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
       } else {
         // 背景色
         const bg = settings.bgColor;
