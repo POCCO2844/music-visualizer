@@ -315,6 +315,7 @@
     <div id="convertProgress"><div id="convertProgressBar"></div></div>
     <div id="convertStatus">準備中...</div>
     <p>そのままお待ちください。変換が完了すると自動的にダウンロードが始まります。</p>
+    <p id="safariWarning" style="display:none; color:#ffcc00;">⚠️ Safariはこの処理との相性が悪く、非常に時間がかかったり完了しない場合があります。Chromeのご利用を推奨します。</p>
   </div>
 
   <div id="settingsPanel">
@@ -729,9 +730,19 @@
       }
     }
 
+    // Safari判定（FFmpeg.wasmとの相性問題があるため警告表示用）
+    function isSafari() {
+      const ua = navigator.userAgent;
+      return /^((?!chrome|android|crios|fxios|edg).)*safari/i.test(ua);
+    }
+
     // 録画開始
     function startRecording() {
       recordedChunks = [];
+
+      if (isSafari()) {
+        console.warn('Safariが検出されました。MP4変換処理が非常に遅い、または完了しない場合があります。Chrome推奨です。');
+      }
 
       // 冒頭から録画する場合、メディアを巻き戻して再生
       if (settings.recordFromStart) {
@@ -841,6 +852,9 @@
       progressBar.style.width = '0%';
       statusEl.textContent = 'FFmpegを準備中... (初回は数十秒かかります)';
 
+      const safariWarning = document.getElementById('safariWarning');
+      if (safariWarning) safariWarning.style.display = isSafari() ? 'block' : 'none';
+
       try {
         const ffmpeg = await loadFFmpeg();
 
@@ -876,8 +890,10 @@
           : ['-an'];
 
         // FFmpegでMP4に変換（H.264 + AAC）
+        // -vf scale: 幅・高さを偶数に丸める（H.264は奇数解像度を許容しないため）
         await ffmpeg.run(
           '-i', 'input.webm',
+          '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
           '-c:v', 'libx264',
           '-preset', 'ultrafast',
           '-crf', crf,
@@ -891,6 +907,12 @@
         progressBar.style.width = '95%';
 
         const data = ffmpeg.FS('readFile', 'output.mp4');
+
+        // 変換失敗時（0バイト）を検知
+        if (!data || data.length === 0) {
+          throw new Error('変換結果が空でした。動画の解像度や形式に問題がある可能性があります。');
+        }
+
         const mp4Blob = new Blob([data.buffer], { type: 'video/mp4' });
 
         // クリーンアップ
