@@ -148,8 +148,6 @@
     canvas {
       position: fixed;
       top: 0; left: 0;
-      width: 100vw;
-      height: 100vh;
       z-index: 1;
     }
     #settingsToggle {
@@ -706,9 +704,42 @@
     }
 
     function resizeCanvas() {
-      if (isRecordingResizeLocked) return; // 録画中は固定解像度を維持
+      if (isRecordingResizeLocked) {
+        // 録画中は内部解像度は固定のまま、画面サイズ変化に応じて表示位置だけ再調整
+        fitCanvasDisplayToScreen();
+        return;
+      }
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
+      // 通常時は内部解像度＝画面サイズなので、CSS表示サイズの指定は不要（解除しておく）
+      canvas.style.width = '';
+      canvas.style.height = '';
+      canvas.style.left = '0';
+      canvas.style.top = '0';
+    }
+
+    // 録画中、canvasの内部解像度（縦横比）を保ったまま画面内に収まるようCSS表示サイズを調整
+    function fitCanvasDisplayToScreen() {
+      const screenW = window.innerWidth;
+      const screenH = window.innerHeight;
+      const canvasRatio = canvas.width / canvas.height;
+      const screenRatio = screenW / screenH;
+
+      let displayW, displayH;
+      if (canvasRatio > screenRatio) {
+        // canvasの方が横長 → 幅を画面に合わせる
+        displayW = screenW;
+        displayH = screenW / canvasRatio;
+      } else {
+        // canvasの方が縦長 → 高さを画面に合わせる
+        displayH = screenH;
+        displayW = screenH * canvasRatio;
+      }
+
+      canvas.style.width = displayW + 'px';
+      canvas.style.height = displayH + 'px';
+      canvas.style.left = ((screenW - displayW) / 2) + 'px';
+      canvas.style.top = ((screenH - displayH) / 2) + 'px';
     }
 
     function toggleSettings() {
@@ -893,6 +924,7 @@
       isRecordingResizeLocked = true;
       canvas.width = targetRes.width;
       canvas.height = targetRes.height;
+      fitCanvasDisplayToScreen(); // アスペクト比を保ったまま画面内に収めて表示
 
       // 冒頭から録画する場合、メディアを巻き戻して再生
       if (settings.recordFromStart) {
