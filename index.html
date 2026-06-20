@@ -530,6 +530,32 @@
     </div>
 
     <div class="setting-group">
+      <label>出力解像度</label>
+      <select id="resolutionMode" style="width: 100%;">
+        <option value="screen">画面サイズ（プレビューと同じ）</option>
+        <option value="bg">背景メディアに合わせる</option>
+        <option value="1920x1080">1920 × 1080（フルHD・横）</option>
+        <option value="1080x1920">1080 × 1920（フルHD・縦）</option>
+        <option value="1080x1080">1080 × 1080（正方形）</option>
+        <option value="3840x2160">3840 × 2160（4K・横）</option>
+        <option value="custom">カスタム指定</option>
+      </select>
+    </div>
+
+    <div class="setting-group" id="customResolutionGroup" style="display: none;">
+      <div class="setting-row">
+        <input type="number" id="customWidth" placeholder="幅" value="1920" min="2" max="7680" step="2" style="width: 50%; background: transparent; border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: var(--radius); font-size: 12px;">
+        <span style="color: var(--text-dim); font-size: 12px;">×</span>
+        <input type="number" id="customHeight" placeholder="高さ" value="1080" min="2" max="7680" step="2" style="width: 50%; background: transparent; border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: var(--radius); font-size: 12px;">
+      </div>
+      <label style="margin-top: 6px; font-size: 10px; color: var(--text-dimmer);">※ 幅・高さは偶数のみ指定可能です</label>
+    </div>
+
+    <div class="setting-group" style="background: rgba(255,255,255,0.04); padding: 10px; border-radius: var(--radius); margin-top: 10px;">
+      <label style="font-size: 10px; color: var(--text-dim);" id="resolutionPreview">出力サイズ: 画面サイズに従います</label>
+    </div>
+
+    <div class="setting-group">
       <label>録画品質</label>
       <select id="recordQuality" style="width: 100%;">
         <option value="high">高品質 (大きいファイル)</option>
@@ -598,6 +624,7 @@
     let isRecording = false;
     let ffmpegLoaded = false;
     let ffmpegInstance = null;
+    let isRecordingResizeLocked = false; // 録画中は画面リサイズでcanvasサイズを変えない
 
     // 設定
     let settings = {
@@ -616,6 +643,9 @@
       recordQuality: 'medium',
       recordAudio: 'yes',
       recordFromStart: true,
+      resolutionMode: 'screen',
+      customWidth: 1920,
+      customHeight: 1080,
       gradientMode: 'palette'
     };
 
@@ -663,6 +693,7 @@
         setupSettingsListeners();
         animate();
         console.log('初期化完了');
+        updateResolutionPreview();
 
         // FFmpegをバックグラウンドでプリロード開始（初回録画時の待ち時間を短縮）
         setTimeout(() => loadFFmpeg(), 2000);
@@ -673,6 +704,7 @@
     }
 
     function resizeCanvas() {
+      if (isRecordingResizeLocked) return; // 録画中は固定解像度を維持
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
     }
@@ -698,6 +730,7 @@
         bgImage = bitmap;
         hasBgMedia = true;
         showInfo('🖼️ 背景画像を設定しました: ' + file.name);
+        updateResolutionPreview();
       } catch (err) {
         console.error('画像読み込みエラー:', err);
         showInfo('❌ 画像の読み込みに失敗しました: ' + file.name);
@@ -715,6 +748,7 @@
       video.src = URL.createObjectURL(file);
       video.style.display = 'block';
       video.play();
+      video.addEventListener('loadedmetadata', updateResolutionPreview, { once: true });
 
       bgVideo = video;
       hasBgMedia = true;
@@ -726,6 +760,7 @@
       bgImage = null;
       bgVideo = null;
       hasBgMedia = false;
+      updateResolutionPreview();
 
       const imgEl = document.getElementById('backgroundImage');
       if (imgEl) {
@@ -790,6 +825,59 @@
       return /^((?!chrome|android|crios|fxios|edg).)*safari/i.test(ua);
     }
 
+    // 偶数に丸める（H.264は奇数解像度を許容しないため）
+    function toEven(n) {
+      n = Math.round(n);
+      return n % 2 === 0 ? n : n - 1;
+    }
+
+    // 設定に応じた出力解像度を計算
+    function getOutputResolution() {
+      switch (settings.resolutionMode) {
+        case 'bg': {
+          if (bgVideo && bgVideo.videoWidth) {
+            return { width: toEven(bgVideo.videoWidth), height: toEven(bgVideo.videoHeight) };
+          }
+          if (bgImage && bgImage.width) {
+            return { width: toEven(bgImage.width), height: toEven(bgImage.height) };
+          }
+          // 背景メディアがない場合は画面サイズにフォールバック
+          return { width: toEven(window.innerWidth), height: toEven(window.innerHeight) };
+        }
+        case 'custom':
+          return {
+            width: toEven(settings.customWidth || 1920),
+            height: toEven(settings.customHeight || 1080)
+          };
+        case 'screen':
+          return { width: toEven(window.innerWidth), height: toEven(window.innerHeight) };
+        default: {
+          // "1920x1080" のような固定プリセット
+          const [w, h] = settings.resolutionMode.split('x').map(Number);
+          if (w && h) return { width: toEven(w), height: toEven(h) };
+          return { width: toEven(window.innerWidth), height: toEven(window.innerHeight) };
+        }
+      }
+    }
+
+    // 設定パネルの解像度プレビュー表示を更新
+    function updateResolutionPreview() {
+      const el = document.getElementById('resolutionPreview');
+      if (!el) return;
+      const res = getOutputResolution();
+      let label;
+      switch (settings.resolutionMode) {
+        case 'screen': label = '画面サイズに従います'; break;
+        case 'bg':
+          label = (bgVideo || bgImage)
+            ? `背景メディアに合わせます`
+            : '背景メディア未設定のため画面サイズになります';
+          break;
+        default: label = 'プリセット解像度';
+      }
+      el.textContent = `出力サイズ: ${res.width} × ${res.height}（${label}）`;
+    }
+
     // 録画開始
     function startRecording() {
       recordedChunks = [];
@@ -797,6 +885,12 @@
       if (isSafari()) {
         console.warn('Safariが検出されました。MP4変換処理が非常に遅い、または完了しない場合があります。Chrome推奨です。');
       }
+
+      // 出力解像度を決定し、録画用にキャンバスサイズを一時的に固定する
+      const targetRes = getOutputResolution();
+      isRecordingResizeLocked = true;
+      canvas.width = targetRes.width;
+      canvas.height = targetRes.height;
 
       // 冒頭から録画する場合、メディアを巻き戻して再生
       if (settings.recordFromStart) {
@@ -852,6 +946,8 @@
         if (MediaRecorder.isTypeSupported(t)) { mimeType = t; break; }
       }
       if (!mimeType) {
+        isRecordingResizeLocked = false;
+        resizeCanvas();
         showInfo('❌ お使いのブラウザは録画をサポートしていません');
         return;
       }
@@ -859,6 +955,8 @@
       try {
         mediaRecorder = new MediaRecorder(canvasStream, { mimeType, videoBitsPerSecond });
       } catch (e) {
+        isRecordingResizeLocked = false;
+        resizeCanvas();
         showInfo('❌ 録画開始失敗: ' + e.message);
         return;
       }
@@ -869,6 +967,9 @@
 
       mediaRecorder.onstop = async () => {
         const webmBlob = new Blob(recordedChunks, { type: 'video/webm' });
+        // 録画用に固定していたキャンバスサイズを画面サイズに戻す
+        isRecordingResizeLocked = false;
+        resizeCanvas();
         await convertToMp4(webmBlob);
       };
 
@@ -1102,6 +1203,23 @@
 
       addListener('recordFromStart', 'change', (e) => {
         settings.recordFromStart = e.target.checked;
+      });
+
+      addListener('resolutionMode', 'change', (e) => {
+        settings.resolutionMode = e.target.value;
+        document.getElementById('customResolutionGroup').style.display =
+          (settings.resolutionMode === 'custom') ? 'block' : 'none';
+        updateResolutionPreview();
+      });
+
+      addListener('customWidth', 'input', (e) => {
+        settings.customWidth = parseInt(e.target.value) || 1920;
+        updateResolutionPreview();
+      });
+
+      addListener('customHeight', 'input', (e) => {
+        settings.customHeight = parseInt(e.target.value) || 1080;
+        updateResolutionPreview();
       });
 
       addListener('bgFitMode', 'change', (e) => {
