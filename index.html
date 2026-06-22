@@ -556,6 +556,14 @@
     </div>
 
     <div class="setting-group">
+      <label>出力形式</label>
+      <select id="outputFormat" style="width: 100%;">
+        <option value="mp4">MP4（自動変換・推奨）</option>
+        <option value="webm">WebM（高速・変換なし）</option>
+      </select>
+    </div>
+
+    <div class="setting-group">
       <label>録画品質</label>
       <select id="recordQuality" style="width: 100%;">
         <option value="high">高品質 (大きいファイル)</option>
@@ -643,6 +651,7 @@
       recordQuality: 'medium',
       recordAudio: 'yes',
       recordFromStart: true,
+      outputFormat: 'mp4',
       resolutionMode: 'screen',
       customWidth: 1920,
       customHeight: 1080,
@@ -1004,7 +1013,13 @@
         // 録画用に固定していたキャンバスサイズを画面サイズに戻す
         isRecordingResizeLocked = false;
         resizeCanvas();
-        await convertToMp4(webmBlob);
+        if (settings.outputFormat === 'webm') {
+          // WebM直接ダウンロード（変換なし）
+          downloadBlob(webmBlob, 'visualizer-' + Date.now() + '.webm');
+          showInfo('⬇️ WebMでダウンロードしました');
+        } else {
+          await convertToMp4(webmBlob);
+        }
       };
 
       mediaRecorder.start(500);
@@ -1045,6 +1060,22 @@
       const safariWarning = document.getElementById('safariWarning');
       if (safariWarning) safariWarning.style.display = isSafari() ? 'block' : 'none';
 
+      // ファイルサイズ警告（200MB超は変換失敗リスクが高い）
+      const fileSizeMB = Math.round(webmBlob.size / 1024 / 1024);
+      if (fileSizeMB > 200) {
+        const proceed = confirm(
+          `録画ファイルが ${fileSizeMB}MB と大きいため、ブラウザ内変換が失敗する可能性があります。\n\n` +
+          `「OK」: MP4変換を試みる（失敗時はWebMでダウンロード）\n` +
+          `「キャンセル」: WebMのまま今すぐダウンロードする`
+        );
+        if (!proceed) {
+          overlay.classList.remove('show');
+          downloadBlob(webmBlob, 'visualizer-' + Date.now() + '.webm');
+          showInfo('⬇️ WebM形式でダウンロードしました（' + fileSizeMB + 'MB）');
+          return;
+        }
+      }
+
       try {
         const ffmpeg = await loadFFmpeg();
 
@@ -1055,7 +1086,7 @@
           return;
         }
 
-        statusEl.textContent = 'データを読み込み中...';
+        statusEl.textContent = `データを読み込み中... (${fileSizeMB}MB)`;
         progressBar.style.width = '5%';
 
         // WebMデータをFFmpegの仮想FSに書き込む
@@ -1079,9 +1110,16 @@
           ? ['-c:a', 'aac', '-b:a', '192k']
           : ['-an'];
 
-        // FFmpegでMP4に変換（H.264 + AAC）
-        // -vf scale: 幅・高さを偶数に丸める（H.264は奇数解像度を許容しないため）
-        await ffmpeg.run(
+        // タイムアウト処理（5分で強制終了）
+        let isTimedOut = false;
+        const timeoutMs = 5 * 60 * 1000;
+        const timeoutId = setTimeout(() => {
+          isTimedOut = true;
+          console.warn('FFmpeg変換タイムアウト');
+        }, timeoutMs);
+
+        // タイムアウト監視とffmpeg.runを並走させる
+        const runPromise = ffmpeg.run(
           '-i', 'input.webm',
           '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
           '-c:v', 'libx264',
@@ -1092,6 +1130,15 @@
           '-movflags', '+faststart',
           'output.mp4'
         );
+
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error(
+            `変換がタイムアウトしました（5分経過）。ファイルが大きすぎる可能性があります（${fileSizeMB}MB）。WebMでダウンロードします。`
+          )), timeoutMs);
+        });
+
+        await Promise.race([runPromise, timeoutPromise]);
+        clearTimeout(timeoutId);
 
         statusEl.textContent = 'ファイルを生成中...';
         progressBar.classList.remove('indeterminate');
@@ -1124,6 +1171,14 @@
       } catch (err) {
         console.error('MP4変換エラー:', err);
         overlay.classList.remove('show');
+        // クリーンアップを試みる
+        try {
+          const ffmpeg = ffmpegInstance;
+          if (ffmpeg) {
+            try { ffmpeg.FS('unlink', 'input.webm'); } catch(e) {}
+            try { ffmpeg.FS('unlink', 'output.mp4'); } catch(e) {}
+          }
+        } catch(e) {}
         downloadBlob(webmBlob, 'visualizer-' + Date.now() + '.webm');
         showInfo('❌ MP4変換に失敗: ' + err.message + ' → WebMでダウンロードしました。');
       }
@@ -1229,6 +1284,10 @@
 
       addListener('recordQuality', 'change', (e) => {
         settings.recordQuality = e.target.value;
+      });
+
+      addListener('outputFormat', 'change', (e) => {
+        settings.outputFormat = e.target.value;
       });
 
       addListener('recordAudio', 'change', (e) => {
