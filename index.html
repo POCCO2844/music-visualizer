@@ -2294,13 +2294,13 @@
       const totalW = barCount * (dotW + gapX) - gapX;
       const totalH = dotRows * (dotH + gapY) - gapY;
       const startX = -totalW / 2;
-      // 下端をy=+totalH/2（画面中央より下）に合わせる
-      const bottomY = totalH / 2;
+      // canvasの高さからsizeScaleを考慮して下端を設定
+      // ctx.translate済み（中央原点）なので、下端は canvas.height/2/sizeScale
+      const bottomY = (canvas.height / 2 / settings.sizeScale) - 10;
 
       for (let i = 0; i < barCount; i++) {
         const idx = Math.floor((i / barCount) * (spectrum.length / 2));
         const rawValue = (spectrum[idx] || 0) / 255;
-        // べき乗で高低差を強調（小さい値はより小さく、大きい値はより大きく）
         const value = Math.pow(rawValue, 0.7) * sens;
         const activeDots = Math.max(1, Math.ceil(value * dotRows));
         const x = startX + i * (dotW + gapX);
@@ -2309,17 +2309,14 @@
           // row=0が一番下、row=dotRows-1が一番上
           const y = bottomY - (row + 1) * (dotH + gapY);
           const isActive = row < activeDots;
-          const heightRatio = row / dotRows;
 
           if (isActive) {
-            // 列方向（左→右）でカラーパレットを変化させる
             const colorIdx = Math.floor((i / barCount) * 100) % 100;
             ctx.fillStyle = getColor(colorIdx, 100, 1);
             ctx.shadowColor = getColor(colorIdx, 100, 0.6);
             ctx.shadowBlur = 5;
             ctx.globalAlpha = 1;
           } else {
-            // 非アクティブはごく暗く
             const colorIdx = Math.floor((i / barCount) * 100) % 100;
             ctx.fillStyle = getColor(colorIdx, 100, 0.08);
             ctx.shadowBlur = 0;
@@ -2338,29 +2335,31 @@
     // 🎵 シンメトリックウェーブ（なめらかな塗りつぶし波形・中央対称）
     function drawSymmetricWave(spectrum, bass, level) {
       const sens = settings.sensitivity;
-      const points = 120;
-      const maxH = canvas.height * 0.42 / settings.sizeScale;
+      const points = 128;
+      const maxH = canvas.height * 0.38 / settings.sizeScale;
       const w = canvas.width * 0.88 / settings.sizeScale;
       const startX = -w / 2;
 
-      // スペクトルから高さ配列を作成（べき乗で高低差を強調）
+      // 時間軸波形データを取得（山と谷がはっきり出る）
+      const timeData = new Uint8Array(analyser ? analyser.fftSize : 2048);
+      if (analyser) analyser.getByteTimeDomainData(timeData);
+
+      // 時間軸データから絶対値を高さとして使う（上下対称のため）
       const heights = [];
       for (let i = 0; i < points; i++) {
-        const idx = Math.floor((i / points) * (spectrum.length / 2));
-        const raw = (spectrum[idx] || 0) / 255;
-        heights.push(Math.pow(raw, 0.65) * sens);
+        const idx = Math.floor((i / points) * timeData.length);
+        // 128が無音（0）、0や255が最大振幅
+        const raw = Math.abs((timeData[idx] - 128) / 128);
+        // 感度とべき乗で高低差を強調
+        heights.push(Math.pow(raw, 0.6) * sens);
       }
-
-      // 最大高さを取得してスケール調整
-      const maxVal = Math.max(...heights, 0.01);
-      const scale = Math.min(maxVal > 0.3 ? 1 : 1.5, 2);
 
       // 上下パスを構築
       const topPath = [];
       const botPath = [];
       for (let i = 0; i < points; i++) {
         const x = startX + (i / (points - 1)) * w;
-        const h = heights[i] * maxH * scale;
+        const h = heights[i] * maxH;
         topPath.push({ x, y: -h });
         botPath.push({ x, y: h });
       }
