@@ -2568,11 +2568,11 @@
     function drawCircleBars(spectrum, bass, level) {
       const sens = settings.sensitivity;
       const barCount = 128;
-      // 中心半径は固定（bassで動かさない）
-      const innerR = 80;
-      // バーの最小長と最大長を設定し、音量で差を変化させる
+      // 短辺を基準にサイズをスケール（sizeScaleも反映）
+      const baseSize = Math.min(drawW, drawH) / settings.sizeScale;
+      const innerR = baseSize * 0.20;    // 短辺の20%を中心半径に
+      const maxBarH = baseSize * 0.38;   // 短辺の38%を最大バー長に
       const minBarH = 2;
-      const maxBarH = 150;
 
       for (let i = 0; i < barCount; i++) {
         const idx = Math.floor((i / barCount) * (spectrum.length / 2));
