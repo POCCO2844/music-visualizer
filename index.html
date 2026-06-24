@@ -282,21 +282,29 @@
       position: fixed;
       pointer-events: none;
       z-index: 103;
-      border: 2px dashed rgba(235, 51, 73, 0.85);
-      box-shadow: 0 0 0 9999px rgba(0,0,0,0.45);
+      border: 2px dashed rgba(255, 255, 255, 0.5);
+      box-shadow: 0 0 0 9999px rgba(0,0,0,0.35);
       display: none;
       box-sizing: border-box;
+      transition: border-color 0.3s ease;
     }
     #recordingFrame.show { display: block; }
+    #recordingFrame.recording {
+      border-color: rgba(235, 51, 73, 0.85);
+      box-shadow: 0 0 0 9999px rgba(0,0,0,0.45);
+    }
     #recordingFrameLabel {
       position: absolute;
       bottom: -22px;
       left: 0;
       font-size: 11px;
-      color: rgba(235,51,73,0.9);
+      color: rgba(255,255,255,0.6);
       white-space: nowrap;
       font-family: -apple-system, sans-serif;
       letter-spacing: 0.03em;
+    }
+    #recordingFrame.recording #recordingFrameLabel {
+      color: rgba(235,51,73,0.9);
     }
 
     #convertingOverlay {
@@ -787,10 +795,11 @@
 
       // 録画枠も同じ位置・サイズに更新
       updateRecordingFrame(displayW, displayH,
-        (screenW - displayW) / 2, (screenH - displayH) / 2);
+        (screenW - displayW) / 2, (screenH - displayH) / 2,
+        canvas.width, canvas.height);
     }
 
-    function updateRecordingFrame(w, h, left, top) {
+    function updateRecordingFrame(w, h, left, top, resW, resH) {
       const frame = document.getElementById('recordingFrame');
       const label = document.getElementById('recordingFrameLabel');
       if (!frame) return;
@@ -798,25 +807,35 @@
       frame.style.height = h + 'px';
       frame.style.left = left + 'px';
       frame.style.top = top + 'px';
-      if (label) label.textContent = `録画範囲: ${canvas.width} × ${canvas.height}`;
+      if (label) label.textContent = `録画範囲: ${resW} × ${resH}`;
     }
 
+    // 録画枠を表示（録画前プレビューにも対応）
     function showRecordingFrame() {
       const res = getOutputResolution();
-      // 画面サイズモードの場合はcanvas全体＝画面全体なので枠は不要だが一応表示
       const screenW = window.innerWidth;
       const screenH = window.innerHeight;
 
       if (settings.resolutionMode === 'screen') {
-        // 画面サイズ＝canvasサイズなので画面全体に薄い枠だけ表示
-        updateRecordingFrame(screenW, screenH, 0, 0);
+        // 画面サイズ＝全画面なので画面全体に枠
+        updateRecordingFrame(screenW, screenH, 0, 0, res.width, res.height);
       } else {
-        // fitCanvasDisplayToScreen内でupdateRecordingFrameが呼ばれる
-        fitCanvasDisplayToScreen();
+        // 解像度のアスペクト比から表示位置・サイズを計算（canvasを変えずに）
+        const ratio = res.width / res.height;
+        const screenRatio = screenW / screenH;
+        let dispW, dispH;
+        if (ratio > screenRatio) {
+          dispW = screenW;
+          dispH = screenW / ratio;
+        } else {
+          dispH = screenH;
+          dispW = screenH * ratio;
+        }
+        const left = (screenW - dispW) / 2;
+        const top = (screenH - dispH) / 2;
+        updateRecordingFrame(dispW, dispH, left, top, res.width, res.height);
       }
       document.getElementById('recordingFrame').classList.add('show');
-      const label = document.getElementById('recordingFrameLabel');
-      if (label) label.textContent = `録画範囲: ${res.width} × ${res.height}`;
     }
 
     function hideRecordingFrame() {
@@ -990,6 +1009,8 @@
         default: label = 'プリセット解像度';
       }
       el.textContent = `出力サイズ: ${res.width} × ${res.height}（${label}）`;
+      // 録画中でない場合もプレビュー枠を更新
+      if (!isRecording) showRecordingFrame();
     }
 
     // 録画開始
@@ -1007,6 +1028,7 @@
       canvas.height = targetRes.height;
       fitCanvasDisplayToScreen();
       showRecordingFrame(); // 録画枠を表示
+      document.getElementById('recordingFrame').classList.add('recording'); // 録画中スタイル
 
       // 冒頭から録画する場合、メディアを巻き戻して再生
       if (settings.recordFromStart) {
@@ -1064,7 +1086,7 @@
       if (!mimeType) {
         isRecordingResizeLocked = false;
         resizeCanvas();
-        hideRecordingFrame();
+        showRecordingFrame();
         showInfo('❌ お使いのブラウザは録画をサポートしていません');
         return;
       }
@@ -1074,7 +1096,7 @@
       } catch (e) {
         isRecordingResizeLocked = false;
         resizeCanvas();
-        hideRecordingFrame();
+        showRecordingFrame();
         showInfo('❌ 録画開始失敗: ' + e.message);
         return;
       }
@@ -1088,7 +1110,8 @@
         // 録画用に固定していたキャンバスサイズを画面サイズに戻す
         isRecordingResizeLocked = false;
         resizeCanvas();
-        hideRecordingFrame();
+        document.getElementById('recordingFrame').classList.remove('recording');
+        showRecordingFrame(); // 録画停止後もプレビュー枠を表示
         if (settings.outputFormat === 'webm') {
           // WebM直接ダウンロード（変換なし）
           downloadBlob(webmBlob, 'visualizer-' + Date.now() + '.webm');
