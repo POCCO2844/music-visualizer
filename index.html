@@ -2555,13 +2555,6 @@
         ctx.stroke();
       }
 
-      // 中心線（細いハイライト）
-      ctx.beginPath();
-      ctx.moveTo(startX, 0);
-      ctx.lineTo(startX + w, 0);
-      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-      ctx.lineWidth = 1;
-      ctx.stroke();
     }
 
     // ⭕ サークルバー（画像3参考：円形に外側に伸びるバー）
@@ -2654,18 +2647,6 @@
         }
         ctx.restore();
       }
-
-      // 中心の細い基準線（参考画像の水平ライン）
-      ctx.save();
-      ctx.strokeStyle = 'rgba(255,255,255,0.2)';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([6, 10]);
-      ctx.beginPath();
-      ctx.moveTo(startX, 0);
-      ctx.lineTo(startX + w, 0);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.restore();
     }
 
     // 🌈 レインボーブロック（画像7・8参考：格子状ブロックのイコライザー）
