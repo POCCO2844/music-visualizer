@@ -2302,29 +2302,33 @@
       const rowStep = dotH + gapY;
 
       for (let i = 0; i < barCount; i++) {
-        const idx = Math.floor((i / barCount) * (spectrum.length / 2));
+        // 低音域を多め・高音域を少なめに割り当て（対数スケール）
+        const ratio = Math.pow(i / barCount, 1.5);
+        const idx = Math.floor(ratio * (spectrum.length / 3));
         const rawValue = (spectrum[idx] || 0) / 255;
-        const value = Math.pow(rawValue, 0.7) * sens;
-        // 音量に応じてアクティブな行数を決定（0〜halfRows）
-        const activeRows = Math.ceil(value * halfRows);
+
+        // 強いべき乗で高低差を大幅に強調（小さい値を大きく削る）
+        const value = Math.pow(rawValue, 1.8) * sens * 1.5;
+        const activeRows = Math.min(halfRows, Math.ceil(value * halfRows));
         const x = startX + i * (dotW + gapX);
         const colorIdx = Math.floor((i / barCount) * 100) % 100;
 
-        // 中央行（row=0）+ 上方向（row=1〜halfRows）+ 下方向（row=-1〜-halfRows）
         for (let row = -halfRows; row <= halfRows; row++) {
           const y = row * rowStep - dotH / 2;
-          // 中央からの距離がactiveRows以内ならアクティブ
-          const isActive = Math.abs(row) <= activeRows;
+          const dist = Math.abs(row);
+          const isActive = dist <= activeRows;
 
           if (isActive) {
-            ctx.fillStyle = getColor(colorIdx, 100, 1);
-            ctx.shadowColor = getColor(colorIdx, 100, 0.6);
-            ctx.shadowBlur = 5;
+            // 外側ほど明るく（先端が光る）
+            const brightness = 0.7 + (dist / halfRows) * 0.3;
+            ctx.fillStyle = getColor(colorIdx, 100, brightness);
+            ctx.shadowColor = getColor(colorIdx, 100, 0.7);
+            ctx.shadowBlur = dist === activeRows ? 8 : 3;
             ctx.globalAlpha = 1;
           } else {
-            ctx.fillStyle = getColor(colorIdx, 100, 0.08);
+            ctx.fillStyle = getColor(colorIdx, 100, 0.07);
             ctx.shadowBlur = 0;
-            ctx.globalAlpha = 0.12;
+            ctx.globalAlpha = 0.10;
           }
 
           ctx.beginPath();
