@@ -2286,38 +2286,44 @@
     function drawDots(spectrum, bass, level) {
       const sens = settings.sensitivity;
       const barCount = 48;
-      const dotRows = 22;
+      const dotRows = 24;
       const dotW = 14;
-      const dotH = 12;
-      const gapX = 5;
+      const dotH = 13;
+      const gapX = 4;
       const gapY = 3;
       const totalW = barCount * (dotW + gapX) - gapX;
       const totalH = dotRows * (dotH + gapY) - gapY;
       const startX = -totalW / 2;
-      const baseY = totalH / 2; // 下端を基準
+      // 下端をy=+totalH/2（画面中央より下）に合わせる
+      const bottomY = totalH / 2;
 
       for (let i = 0; i < barCount; i++) {
         const idx = Math.floor((i / barCount) * (spectrum.length / 2));
-        const value = (spectrum[idx] || 0) / 255 * sens;
+        const rawValue = (spectrum[idx] || 0) / 255;
+        // べき乗で高低差を強調（小さい値はより小さく、大きい値はより大きく）
+        const value = Math.pow(rawValue, 0.7) * sens;
         const activeDots = Math.max(1, Math.ceil(value * dotRows));
         const x = startX + i * (dotW + gapX);
 
         for (let row = 0; row < dotRows; row++) {
           // row=0が一番下、row=dotRows-1が一番上
-          const y = baseY - row * (dotH + gapY) - dotH;
+          const y = bottomY - (row + 1) * (dotH + gapY);
           const isActive = row < activeDots;
           const heightRatio = row / dotRows;
 
           if (isActive) {
-            const colorIdx = Math.floor((i / barCount) * 60 + heightRatio * 40) % 100;
+            // 列方向（左→右）でカラーパレットを変化させる
+            const colorIdx = Math.floor((i / barCount) * 100) % 100;
             ctx.fillStyle = getColor(colorIdx, 100, 1);
-            ctx.shadowColor = getColor(colorIdx, 100, 0.7);
-            ctx.shadowBlur = 6;
-            ctx.globalAlpha = 0.9 + heightRatio * 0.1;
+            ctx.shadowColor = getColor(colorIdx, 100, 0.6);
+            ctx.shadowBlur = 5;
+            ctx.globalAlpha = 1;
           } else {
-            ctx.fillStyle = getColor(Math.floor((i / barCount) * 60) % 100, 100, 0.12);
+            // 非アクティブはごく暗く
+            const colorIdx = Math.floor((i / barCount) * 100) % 100;
+            ctx.fillStyle = getColor(colorIdx, 100, 0.08);
             ctx.shadowBlur = 0;
-            ctx.globalAlpha = 0.15;
+            ctx.globalAlpha = 0.12;
           }
 
           ctx.beginPath();
@@ -2333,33 +2339,56 @@
     function drawSymmetricWave(spectrum, bass, level) {
       const sens = settings.sensitivity;
       const points = 120;
-      const maxH = canvas.height * 0.38 / settings.sizeScale;
-      const w = canvas.width * 0.85 / settings.sizeScale;
+      const maxH = canvas.height * 0.42 / settings.sizeScale;
+      const w = canvas.width * 0.88 / settings.sizeScale;
       const startX = -w / 2;
 
-      // スペクトルから滑らかな高さ配列を作成
+      // スペクトルから高さ配列を作成（べき乗で高低差を強調）
       const heights = [];
       for (let i = 0; i < points; i++) {
         const idx = Math.floor((i / points) * (spectrum.length / 2));
-        heights.push((spectrum[idx] || 0) / 255 * sens);
+        const raw = (spectrum[idx] || 0) / 255;
+        heights.push(Math.pow(raw, 0.65) * sens);
       }
 
-      // 上側の波形パスを構築（bezierCurveToで滑らか）
+      // 最大高さを取得してスケール調整
+      const maxVal = Math.max(...heights, 0.01);
+      const scale = Math.min(maxVal > 0.3 ? 1 : 1.5, 2);
+
+      // 上下パスを構築
       const topPath = [];
       const botPath = [];
       for (let i = 0; i < points; i++) {
         const x = startX + (i / (points - 1)) * w;
-        const h = heights[i] * maxH;
+        const h = heights[i] * maxH * scale;
         topPath.push({ x, y: -h });
         botPath.push({ x, y: h });
       }
 
-      // グラデーション（横方向・左がピンク→右がオレンジ）
-      const grad = ctx.createLinearGradient(startX, 0, startX + w, 0);
-      grad.addColorStop(0,   getColor(0,  100, 0.9));
-      grad.addColorStop(0.3, getColor(10, 100, 0.9));
-      grad.addColorStop(0.6, getColor(15, 100, 0.85));
-      grad.addColorStop(1,   getColor(5,  100, 0.9));
+      // 縦方向グラデーション（パレットの色を上→中央→下に配置・カラーパレット連動）
+      const maxHNow = Math.max(...topPath.map(p => Math.abs(p.y)), 10);
+      const grad = ctx.createLinearGradient(0, -maxHNow, 0, maxHNow);
+      // パレットの色を使って上端→中央→下端のグラデーションを生成
+      // 上端と下端に最初の色、中央に最後の色を配置（対称）
+      if (palette.length === 1) {
+        const [r, g, b] = palette[0];
+        grad.addColorStop(0,   `rgba(${r},${g},${b},0.95)`);
+        grad.addColorStop(0.5, `rgba(${Math.min(r+40,255)},${Math.min(g+40,255)},${Math.min(b+40,255)},0.9)`);
+        grad.addColorStop(1,   `rgba(${r},${g},${b},0.95)`);
+      } else {
+        // 複数色：上端から下端にかけてパレット色を対称配置
+        const half = palette.length;
+        for (let pi = 0; pi < half; pi++) {
+          const [r, g, b] = palette[pi];
+          const t = pi / (half - 1); // 0〜1
+          const stopTop = t * 0.5;       // 0〜0.5（上半分）
+          const stopBot = 1 - stopTop;   // 1〜0.5（下半分・対称）
+          grad.addColorStop(stopTop, `rgba(${r},${g},${b},0.95)`);
+          if (stopBot !== stopTop) {
+            grad.addColorStop(stopBot, `rgba(${r},${g},${b},0.95)`);
+          }
+        }
+      }
 
       // 塗りつぶし波形（上下対称）
       ctx.beginPath();
@@ -2383,11 +2412,9 @@
 
       ctx.closePath();
       ctx.fillStyle = grad;
-      ctx.globalAlpha = 0.85;
       ctx.fill();
-      ctx.globalAlpha = 1;
 
-      // アウトラインを上下それぞれ描く（少し明るく）
+      // アウトライン（上下それぞれ）
       for (const path of [topPath, botPath]) {
         ctx.beginPath();
         ctx.moveTo(path[0].x, path[0].y);
@@ -2397,7 +2424,8 @@
           const cpX = (prev.x + curr.x) / 2;
           ctx.bezierCurveTo(cpX, prev.y, cpX, curr.y, curr.x, curr.y);
         }
-        ctx.strokeStyle = getColor(5, 100, 0.7);
+        const [or, og, ob] = palette[0];
+        ctx.strokeStyle = `rgba(${or},${og},${ob},0.5)`;
         ctx.lineWidth = 1.5;
         ctx.stroke();
       }
