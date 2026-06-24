@@ -278,6 +278,27 @@
     }
     #recordingIndicator.show { display: block; }
 
+    #recordingFrame {
+      position: fixed;
+      pointer-events: none;
+      z-index: 103;
+      border: 2px dashed rgba(235, 51, 73, 0.85);
+      box-shadow: 0 0 0 9999px rgba(0,0,0,0.45);
+      display: none;
+      box-sizing: border-box;
+    }
+    #recordingFrame.show { display: block; }
+    #recordingFrameLabel {
+      position: absolute;
+      bottom: -22px;
+      left: 0;
+      font-size: 11px;
+      color: rgba(235,51,73,0.9);
+      white-space: nowrap;
+      font-family: -apple-system, sans-serif;
+      letter-spacing: 0.03em;
+    }
+
     #convertingOverlay {
       position: fixed;
       top: 0; left: 0;
@@ -366,6 +387,7 @@
   <button id="settingsToggle">⚙️</button>
 
   <div id="recordingIndicator">🔴 録画中...</div>
+  <div id="recordingFrame"><span id="recordingFrameLabel"></span></div>
 
   <div id="convertingOverlay">
     <h2>🎬 MP4に変換中...</h2>
@@ -751,11 +773,9 @@
 
       let displayW, displayH;
       if (canvasRatio > screenRatio) {
-        // canvasの方が横長 → 幅を画面に合わせる
         displayW = screenW;
         displayH = screenW / canvasRatio;
       } else {
-        // canvasの方が縦長 → 高さを画面に合わせる
         displayH = screenH;
         displayW = screenH * canvasRatio;
       }
@@ -764,6 +784,43 @@
       canvas.style.height = displayH + 'px';
       canvas.style.left = ((screenW - displayW) / 2) + 'px';
       canvas.style.top = ((screenH - displayH) / 2) + 'px';
+
+      // 録画枠も同じ位置・サイズに更新
+      updateRecordingFrame(displayW, displayH,
+        (screenW - displayW) / 2, (screenH - displayH) / 2);
+    }
+
+    function updateRecordingFrame(w, h, left, top) {
+      const frame = document.getElementById('recordingFrame');
+      const label = document.getElementById('recordingFrameLabel');
+      if (!frame) return;
+      frame.style.width = w + 'px';
+      frame.style.height = h + 'px';
+      frame.style.left = left + 'px';
+      frame.style.top = top + 'px';
+      if (label) label.textContent = `録画範囲: ${canvas.width} × ${canvas.height}`;
+    }
+
+    function showRecordingFrame() {
+      const res = getOutputResolution();
+      // 画面サイズモードの場合はcanvas全体＝画面全体なので枠は不要だが一応表示
+      const screenW = window.innerWidth;
+      const screenH = window.innerHeight;
+
+      if (settings.resolutionMode === 'screen') {
+        // 画面サイズ＝canvasサイズなので画面全体に薄い枠だけ表示
+        updateRecordingFrame(screenW, screenH, 0, 0);
+      } else {
+        // fitCanvasDisplayToScreen内でupdateRecordingFrameが呼ばれる
+        fitCanvasDisplayToScreen();
+      }
+      document.getElementById('recordingFrame').classList.add('show');
+      const label = document.getElementById('recordingFrameLabel');
+      if (label) label.textContent = `録画範囲: ${res.width} × ${res.height}`;
+    }
+
+    function hideRecordingFrame() {
+      document.getElementById('recordingFrame').classList.remove('show');
     }
 
     function toggleSettings() {
@@ -948,7 +1005,8 @@
       isRecordingResizeLocked = true;
       canvas.width = targetRes.width;
       canvas.height = targetRes.height;
-      fitCanvasDisplayToScreen(); // アスペクト比を保ったまま画面内に収めて表示
+      fitCanvasDisplayToScreen();
+      showRecordingFrame(); // 録画枠を表示
 
       // 冒頭から録画する場合、メディアを巻き戻して再生
       if (settings.recordFromStart) {
@@ -1006,6 +1064,7 @@
       if (!mimeType) {
         isRecordingResizeLocked = false;
         resizeCanvas();
+        hideRecordingFrame();
         showInfo('❌ お使いのブラウザは録画をサポートしていません');
         return;
       }
@@ -1015,6 +1074,7 @@
       } catch (e) {
         isRecordingResizeLocked = false;
         resizeCanvas();
+        hideRecordingFrame();
         showInfo('❌ 録画開始失敗: ' + e.message);
         return;
       }
@@ -1028,6 +1088,7 @@
         // 録画用に固定していたキャンバスサイズを画面サイズに戻す
         isRecordingResizeLocked = false;
         resizeCanvas();
+        hideRecordingFrame();
         if (settings.outputFormat === 'webm') {
           // WebM直接ダウンロード（変換なし）
           downloadBlob(webmBlob, 'visualizer-' + Date.now() + '.webm');
@@ -2288,9 +2349,10 @@
       const barCount = 48;
       const halfRows = 11; // 中央から上下それぞれ何行分
 
-      // canvasサイズに合わせてドットサイズを動的計算
-      const availW = canvas.width / settings.sizeScale * 0.90;
-      const availH = canvas.height / settings.sizeScale * 0.80;
+      // ctx.scale(sizeScale)が適用済みなので、canvas座標系をそのまま使えばsizeScaleが反映される
+      // sizeScaleで割り戻さずにcanvasサイズを直接使う
+      const availW = canvas.width * 0.90;
+      const availH = canvas.height * 0.80;
       const totalRows = halfRows * 2 + 1; // 上+中央+下
       const dotW = Math.max(4, Math.floor(availW / barCount * 0.76));
       const dotH = Math.max(3, Math.floor(availH / totalRows * 0.72));
@@ -2344,8 +2406,9 @@
     function drawSymmetricWave(spectrum, bass, level) {
       const sens = settings.sensitivity;
       const points = 128;
-      const maxH = canvas.height * 0.38 / settings.sizeScale;
-      const w = canvas.width * 0.88 / settings.sizeScale;
+      // ctx.scale(sizeScale)適用済みなので割り戻しなしで正しくスケールされる
+      const maxH = canvas.height * 0.38;
+      const w = canvas.width * 0.88;
       const startX = -w / 2;
 
       // 時間軸波形データを取得（山と谷がはっきり出る）
@@ -2461,13 +2524,19 @@
     function drawCircleBars(spectrum, bass, level) {
       const sens = settings.sensitivity;
       const barCount = 128;
-      const innerR = 80 + bass * 0.3 * sens;
-      const maxBarH = 120;
+      // 中心半径は固定（bassで動かさない）
+      const innerR = 80;
+      // バーの最小長と最大長を設定し、音量で差を変化させる
+      const minBarH = 2;
+      const maxBarH = 150;
 
       for (let i = 0; i < barCount; i++) {
         const idx = Math.floor((i / barCount) * (spectrum.length / 2));
-        const value = (spectrum[idx] || 0) / 255 * sens;
-        const barH = value * maxBarH + 2;
+        const value = (spectrum[idx] || 0) / 255;
+        // べき乗で高低差を強調
+        const powered = Math.pow(value, 1.4) * sens;
+        // 最小長〜最大長の範囲でバー長を決定
+        const barH = minBarH + powered * (maxBarH - minBarH);
         const angle = (i / barCount) * Math.PI * 2 - Math.PI / 2;
 
         const x1 = Math.cos(angle) * innerR;
@@ -2485,7 +2554,6 @@
       }
 
       // 中心は透過（背景が透けて見える）
-      // ※塗りつぶしなし
     }
 
     // 💚 ネオンウェーブ（画像4参考：中心線から上下に振れる虹色波形）
