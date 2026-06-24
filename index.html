@@ -2282,21 +2282,25 @@
       }
     }
 
-    // 🟣 ドットイコライザー（画像1参考：下から上に積み上がるドットバー）
+    // 🟣 ドットイコライザー（画像1参考：下から上に積み上がるドットバー・グリッド中央配置）
     function drawDots(spectrum, bass, level) {
       const sens = settings.sensitivity;
       const barCount = 48;
-      const dotRows = 24;
-      const dotW = 14;
-      const dotH = 13;
-      const gapX = 4;
-      const gapY = 3;
+      const dotRows = 22;
+
+      // canvasサイズに合わせてドットサイズを動的計算
+      const availW = canvas.width / settings.sizeScale * 0.90;
+      const availH = canvas.height / settings.sizeScale * 0.72;
+      const dotW = Math.max(4, Math.floor(availW / barCount * 0.76));
+      const dotH = Math.max(3, Math.floor(availH / dotRows * 0.76));
+      const gapX = Math.max(1, Math.floor(availW / barCount * 0.24));
+      const gapY = Math.max(1, Math.floor(availH / dotRows * 0.24));
+
       const totalW = barCount * (dotW + gapX) - gapX;
       const totalH = dotRows * (dotH + gapY) - gapY;
       const startX = -totalW / 2;
-      // canvasの高さからsizeScaleを考慮して下端を設定
-      // ctx.translate済み（中央原点）なので、下端は canvas.height/2/sizeScale
-      const bottomY = (canvas.height / 2 / settings.sizeScale) - 10;
+      // グリッド全体を画面中央に配置（上下均等に余白）
+      const gridTopY = -totalH / 2;
 
       for (let i = 0; i < barCount; i++) {
         const idx = Math.floor((i / barCount) * (spectrum.length / 2));
@@ -2307,7 +2311,7 @@
 
         for (let row = 0; row < dotRows; row++) {
           // row=0が一番下、row=dotRows-1が一番上
-          const y = bottomY - (row + 1) * (dotH + gapY);
+          const y = gridTopY + (dotRows - 1 - row) * (dotH + gapY);
           const isActive = row < activeDots;
 
           if (isActive) {
@@ -2324,7 +2328,7 @@
           }
 
           ctx.beginPath();
-          ctx.roundRect(x, y, dotW, dotH, 3);
+          ctx.roundRect(x, y, dotW, dotH, 2);
           ctx.fill();
         }
       }
@@ -2344,14 +2348,25 @@
       const timeData = new Uint8Array(analyser ? analyser.fftSize : 2048);
       if (analyser) analyser.getByteTimeDomainData(timeData);
 
-      // 時間軸データから絶対値を高さとして使う（上下対称のため）
+      // 全サンプルのRMS（実効値）を計算して全体の音量を把握
+      let rms = 0;
+      for (let i = 0; i < timeData.length; i++) {
+        const v = (timeData[i] - 128) / 128;
+        rms += v * v;
+      }
+      rms = Math.sqrt(rms / timeData.length);
+
+      // RMSが閾値以下なら無音とみなしてほぼ平らに
+      const silenceThreshold = 0.01;
+      const volumeScale = rms < silenceThreshold ? 0 : Math.pow(rms * sens * 3, 0.8);
+
+      // 各ポイントの高さを計算
       const heights = [];
       for (let i = 0; i < points; i++) {
         const idx = Math.floor((i / points) * timeData.length);
-        // 128が無音（0）、0や255が最大振幅
         const raw = Math.abs((timeData[idx] - 128) / 128);
-        // 感度とべき乗で高低差を強調
-        heights.push(Math.pow(raw, 0.6) * sens);
+        // volumeScaleで全体をスケーリング（無音時は0に近い）
+        heights.push(raw * volumeScale);
       }
 
       // 上下パスを構築
@@ -2359,7 +2374,7 @@
       const botPath = [];
       for (let i = 0; i < points; i++) {
         const x = startX + (i / (points - 1)) * w;
-        const h = heights[i] * maxH;
+        const h = Math.min(heights[i] * maxH, maxH); // 最大高さを超えないよう制限
         topPath.push({ x, y: -h });
         botPath.push({ x, y: h });
       }
