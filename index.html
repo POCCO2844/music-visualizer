@@ -357,7 +357,8 @@
       <option value="circlebars">⭕ サークルバー</option>
       <option value="neonwave">💚 ネオンウェーブ</option>
       <option value="rainbowblocks">🌈 レインボーブロック</option>
-      <option value="turbospiral">🌪️ ターボスパイラル</option>
+      <option value="liquidwave">🌊 液体波形</option>
+      <option value="spiralfirework">✨ スパイラル花火</option>
     </select>
     <button id="recordBtn">⏺️ 録画開始</button>
   </div>
@@ -380,7 +381,7 @@
     <div class="setting-group">
       <div class="checkbox-group">
         <input type="checkbox" id="mirrorReflection">
-        <label for="mirrorReflection">🪞 鏡面反射（ガラスエフェクト）</label>
+        <label for="mirrorReflection">🪞 鏡面反射（レインボーブロック専用）</label>
       </div>
     </div>
 
@@ -1722,7 +1723,8 @@
         case 'circlebars': drawCircleBars(spectrum, bass, level); break;
         case 'neonwave': drawNeonWave(spectrum, bass, level); break;
         case 'rainbowblocks': drawRainbowBlocks(spectrum, bass, level); break;
-        case 'turbospiral': drawTurboSpiral(spectrum, bass, level); break;
+        case 'liquidwave': drawLiquidWave(spectrum, bass, level); break;
+        case 'spiralfirework': drawSpiralFirework(spectrum, bass, level); break;
       }
 
       if (settings.showParticles) {
@@ -1730,11 +1732,6 @@
       }
 
       ctx.restore();
-
-      // 鏡面反射エフェクト（全ビジュアライザー共通）
-      if (settings.mirrorReflection) {
-        drawMirrorReflection();
-      }
 
       angleOffset += (0.01 + level * 0.05) * settings.rotationSpeed;
     }
@@ -2285,66 +2282,133 @@
       }
     }
 
-    // 🟣 ドットイコライザー（画像1参考：丸ドットが縦に積み上がるバー）
+    // 🟣 ドットイコライザー（画像1参考：下から上に積み上がるドットバー）
     function drawDots(spectrum, bass, level) {
       const sens = settings.sensitivity;
       const barCount = 48;
-      const dotRows = 20;
-      const dotR = 7;
-      const gap = 4;
-      const barW = dotR * 2 + gap;
-      const totalW = barCount * (barW + gap);
+      const dotRows = 22;
+      const dotW = 14;
+      const dotH = 12;
+      const gapX = 5;
+      const gapY = 3;
+      const totalW = barCount * (dotW + gapX) - gapX;
+      const totalH = dotRows * (dotH + gapY) - gapY;
       const startX = -totalW / 2;
-      const dotH = dotR * 2 + gap;
-      const totalH = dotRows * dotH;
+      const baseY = totalH / 2; // 下端を基準
 
       for (let i = 0; i < barCount; i++) {
         const idx = Math.floor((i / barCount) * (spectrum.length / 2));
         const value = (spectrum[idx] || 0) / 255 * sens;
-        const activeDots = Math.ceil(value * dotRows);
-        const x = startX + i * (barW + gap) + dotR;
+        const activeDots = Math.max(1, Math.ceil(value * dotRows));
+        const x = startX + i * (dotW + gapX);
 
         for (let row = 0; row < dotRows; row++) {
-          const y = totalH / 2 - row * dotH - dotR;
+          // row=0が一番下、row=dotRows-1が一番上
+          const y = baseY - row * (dotH + gapY) - dotH;
           const isActive = row < activeDots;
-          const brightness = isActive ? 1 : 0.08;
-          const colorRatio = i / barCount;
-          ctx.globalAlpha = brightness;
-          ctx.fillStyle = getColor(Math.floor(colorRatio * 100), 100, 1);
+          const heightRatio = row / dotRows;
+
+          if (isActive) {
+            const colorIdx = Math.floor((i / barCount) * 60 + heightRatio * 40) % 100;
+            ctx.fillStyle = getColor(colorIdx, 100, 1);
+            ctx.shadowColor = getColor(colorIdx, 100, 0.7);
+            ctx.shadowBlur = 6;
+            ctx.globalAlpha = 0.9 + heightRatio * 0.1;
+          } else {
+            ctx.fillStyle = getColor(Math.floor((i / barCount) * 60) % 100, 100, 0.12);
+            ctx.shadowBlur = 0;
+            ctx.globalAlpha = 0.15;
+          }
+
           ctx.beginPath();
-          ctx.roundRect(x - dotR, y - dotR, dotR * 2, dotR * 2, 3);
+          ctx.roundRect(x, y, dotW, dotH, 3);
           ctx.fill();
         }
       }
       ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
     }
 
-    // 🎵 シンメトリックウェーブ（画像2参考：細いバーが中央から上下対称）
+    // 🎵 シンメトリックウェーブ（なめらかな塗りつぶし波形・中央対称）
     function drawSymmetricWave(spectrum, bass, level) {
       const sens = settings.sensitivity;
-      const barCount = 80;
-      const maxH = canvas.height * 0.35 / settings.sizeScale;
-      const barW = 3;
-      const gap = 2;
-      const totalW = barCount * (barW + gap);
-      const startX = -totalW / 2;
+      const points = 120;
+      const maxH = canvas.height * 0.38 / settings.sizeScale;
+      const w = canvas.width * 0.85 / settings.sizeScale;
+      const startX = -w / 2;
 
-      for (let i = 0; i < barCount; i++) {
-        const idx = Math.floor((i / barCount) * (spectrum.length / 2));
-        const value = (spectrum[idx] || 0) / 255 * sens;
-        const h = value * maxH;
-        const x = startX + i * (barW + gap);
-        const colorRatio = i / barCount;
-
-        // グラデーション作成（上がピンク系、下がオレンジ系）
-        const grad = ctx.createLinearGradient(0, -h, 0, h);
-        grad.addColorStop(0, getColor(Math.floor(colorRatio * 100), 100, 1));
-        grad.addColorStop(0.5, getColor(Math.floor(colorRatio * 100 + 20), 100, 0.9));
-        grad.addColorStop(1, getColor(Math.floor(colorRatio * 100), 100, 1));
-
-        ctx.fillStyle = grad;
-        ctx.fillRect(x, -h, barW, h * 2); // 上下対称
+      // スペクトルから滑らかな高さ配列を作成
+      const heights = [];
+      for (let i = 0; i < points; i++) {
+        const idx = Math.floor((i / points) * (spectrum.length / 2));
+        heights.push((spectrum[idx] || 0) / 255 * sens);
       }
+
+      // 上側の波形パスを構築（bezierCurveToで滑らか）
+      const topPath = [];
+      const botPath = [];
+      for (let i = 0; i < points; i++) {
+        const x = startX + (i / (points - 1)) * w;
+        const h = heights[i] * maxH;
+        topPath.push({ x, y: -h });
+        botPath.push({ x, y: h });
+      }
+
+      // グラデーション（横方向・左がピンク→右がオレンジ）
+      const grad = ctx.createLinearGradient(startX, 0, startX + w, 0);
+      grad.addColorStop(0,   getColor(0,  100, 0.9));
+      grad.addColorStop(0.3, getColor(10, 100, 0.9));
+      grad.addColorStop(0.6, getColor(15, 100, 0.85));
+      grad.addColorStop(1,   getColor(5,  100, 0.9));
+
+      // 塗りつぶし波形（上下対称）
+      ctx.beginPath();
+      ctx.moveTo(topPath[0].x, topPath[0].y);
+
+      // 上辺（左→右、滑らか）
+      for (let i = 1; i < points; i++) {
+        const prev = topPath[i - 1];
+        const curr = topPath[i];
+        const cpX = (prev.x + curr.x) / 2;
+        ctx.bezierCurveTo(cpX, prev.y, cpX, curr.y, curr.x, curr.y);
+      }
+
+      // 下辺（右→左、滑らか）
+      for (let i = points - 1; i >= 0; i--) {
+        const next = i > 0 ? botPath[i - 1] : botPath[0];
+        const curr = botPath[i];
+        const cpX = (curr.x + next.x) / 2;
+        ctx.bezierCurveTo(cpX, curr.y, cpX, next.y, next.x, next.y);
+      }
+
+      ctx.closePath();
+      ctx.fillStyle = grad;
+      ctx.globalAlpha = 0.85;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      // アウトラインを上下それぞれ描く（少し明るく）
+      for (const path of [topPath, botPath]) {
+        ctx.beginPath();
+        ctx.moveTo(path[0].x, path[0].y);
+        for (let i = 1; i < points; i++) {
+          const prev = path[i - 1];
+          const curr = path[i];
+          const cpX = (prev.x + curr.x) / 2;
+          ctx.bezierCurveTo(cpX, prev.y, cpX, curr.y, curr.x, curr.y);
+        }
+        ctx.strokeStyle = getColor(5, 100, 0.7);
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+
+      // 中心線（細いハイライト）
+      ctx.beginPath();
+      ctx.moveTo(startX, 0);
+      ctx.lineTo(startX + w, 0);
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
     }
 
     // ⭕ サークルバー（画像3参考：円形に外側に伸びるバー）
@@ -2374,63 +2438,75 @@
         ctx.stroke();
       }
 
-      // 中心の白丸
-      ctx.fillStyle = 'rgba(255,255,255,0.15)';
-      ctx.beginPath();
-      ctx.arc(0, 0, innerR - 2, 0, Math.PI * 2);
-      ctx.fill();
+      // 中心は透過（背景が透けて見える）
+      // ※塗りつぶしなし
     }
 
-    // 💚 ネオンウェーブ（画像4参考：虹色ネオン波形ライン）
+    // 💚 ネオンウェーブ（画像4参考：中心線から上下に振れる虹色波形）
     function drawNeonWave(spectrum, bass, level) {
       const sens = settings.sensitivity;
       const w = canvas.width / settings.sizeScale;
       const startX = -w / 2;
-      const points = 120;
-      const maxAmp = 120;
+      const maxAmp = 130 * Math.min(sens, 2);
 
-      // 複数の波ラインを重ねる
-      const lines = [
-        { colorOff: 0,  alpha: 1.0, lw: 3 },
-        { colorOff: 33, alpha: 0.7, lw: 2 },
-        { colorOff: 66, alpha: 0.5, lw: 1.5 },
+      // 時間軸波形データを取得（中心y=0基準の波形に最適）
+      const timeData = new Uint8Array(analyser ? analyser.fftSize : 2048);
+      if (analyser) analyser.getByteTimeDomainData(timeData);
+
+      const points = Math.min(timeData.length, 512);
+
+      // グロー効果のために同じ線を太さ・透明度を変えて3回重ねる
+      const passes = [
+        { lw: 8,  alpha: 0.15 },  // 外側のグロー
+        { lw: 3,  alpha: 0.6  },  // 中間
+        { lw: 1.5, alpha: 1.0 },  // メインライン
       ];
 
-      for (const line of lines) {
+      for (const pass of passes) {
         ctx.save();
-        ctx.shadowBlur = 18;
-        ctx.lineWidth = line.lw;
+        ctx.lineWidth = pass.lw;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
-        ctx.beginPath();
+        ctx.shadowBlur = pass.lw > 2 ? 20 : 0;
 
-        for (let i = 0; i <= points; i++) {
-          const idx = Math.floor((i / points) * (spectrum.length / 2));
-          const value = (spectrum[idx] || 0) / 255 * sens;
-          const x = startX + (i / points) * w;
-          const y = (value - 0.5) * maxAmp * 2;
+        // セグメントごとに色を変えて描画（虹色グラデーション）
+        const segCount = 60;
+        const segSize = Math.floor(points / segCount);
 
-          const colorIdx = Math.floor((i / points) * 100 + line.colorOff) % 100;
-          ctx.strokeStyle = getColor(colorIdx, 100, line.alpha);
+        for (let seg = 0; seg < segCount; seg++) {
+          const colorIdx = Math.floor((seg / segCount) * 100);
+          const color = getColor(colorIdx, 100, pass.alpha);
+          ctx.strokeStyle = color;
           ctx.shadowColor = getColor(colorIdx, 100, 0.8);
 
-          if (i === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
+          ctx.beginPath();
+          for (let j = 0; j <= segSize; j++) {
+            const i = seg * segSize + j;
+            if (i >= points) break;
+            const t = i / (points - 1);
+            const x = startX + t * w;
+            // 128が中心（0）、0〜255を-1〜+1に変換してy軸に反映
+            const raw = (timeData[i] - 128) / 128;
+            const y = raw * maxAmp;
+
+            if (j === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
         }
-        ctx.stroke();
         ctx.restore();
       }
 
-      // 中心の強調ライン
+      // 中心の細い基準線（参考画像の水平ライン）
       ctx.save();
-      ctx.globalAlpha = 0.4;
-      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+      ctx.strokeStyle = 'rgba(255,255,255,0.2)';
       ctx.lineWidth = 1;
-      ctx.setLineDash([4, 8]);
+      ctx.setLineDash([6, 10]);
       ctx.beginPath();
-      ctx.moveTo(-w / 2, 0);
-      ctx.lineTo(w / 2, 0);
+      ctx.moveTo(startX, 0);
+      ctx.lineTo(startX + w, 0);
       ctx.stroke();
+      ctx.setLineDash([]);
       ctx.restore();
     }
 
@@ -2446,7 +2522,8 @@
       const totalW = colCount * (blockW + gapX);
       const totalH = maxRows * (blockH + gapY);
       const startX = -totalW / 2;
-      const startY = -totalH / 2;
+      // ブロックを画面中央より少し上に配置（反射領域のスペースを確保）
+      const startY = -totalH * 0.6;
 
       // 各列の「ピーク保持」（落下するピーク点）
       if (!drawRainbowBlocks._peaks) {
@@ -2474,16 +2551,13 @@
           const x = startX + col * (blockW + gapX);
           const y = startY + (maxRows - 1 - row) * (blockH + gapY);
           const isActive = row < activeRows;
-
-          // 虹色：列で色が変わる
           const hue = (col / colCount) * 300;
+
           if (isActive) {
-            // アクティブブロック：明るく
             ctx.fillStyle = `hsla(${hue}, 100%, 55%, 0.95)`;
             ctx.shadowColor = `hsla(${hue}, 100%, 70%, 0.6)`;
             ctx.shadowBlur = 6;
           } else {
-            // 非アクティブ：暗く
             ctx.fillStyle = `hsla(${hue}, 40%, 15%, 0.4)`;
             ctx.shadowBlur = 0;
           }
@@ -2508,82 +2582,178 @@
         }
       }
       ctx.shadowBlur = 0;
-    }
 
-    // 🌪️ ターボスパイラル（画像6参考：回転する花火・スパイラル）
-    function drawTurboSpiral(spectrum, bass, level) {
-      const sens = settings.sensitivity;
-      const arms = 7;
-      const pointsPerArm = 60;
-      const time = Date.now() * 0.001;
-      const baseRotation = angleOffset * 1.5;
+      // 🪞 鏡面反射（レインボーブロック専用・チェックON時のみ）
+      if (settings.mirrorReflection) {
+        const bottomY = startY + totalH; // ブロック下端のy座標（canvasの中央基準）
 
-      for (let arm = 0; arm < arms; arm++) {
-        const armAngle = (arm / arms) * Math.PI * 2 + baseRotation;
-        ctx.save();
-        ctx.rotate(armAngle);
-
-        ctx.beginPath();
-        ctx.lineWidth = settings.lineWidth + 1;
-        ctx.strokeStyle = getColor(Math.floor((arm / arms) * 100), 100, 0.85);
-        ctx.shadowColor = getColor(Math.floor((arm / arms) * 100), 100, 0.6);
-        ctx.shadowBlur = 12;
-        ctx.lineCap = 'round';
-
-        for (let p = 0; p < pointsPerArm; p++) {
-          const t = p / pointsPerArm;
-          const idx = Math.floor(t * (spectrum.length / 3));
+        for (let col = 0; col < colCount; col++) {
+          const idx = Math.floor((col / colCount) * (spectrum.length / 2));
           const value = (spectrum[idx] || 0) / 255 * sens;
+          const activeRows = Math.ceil(value * maxRows);
+          const hue = (col / colCount) * 300;
 
-          const radius = t * 200 * (1 + value * 0.6);
-          const spiralAngle = t * Math.PI * 3;
-          const wobble = Math.sin(time * 3 + t * Math.PI * 4 + arm) * 15 * value;
+          for (let row = 0; row < activeRows; row++) {
+            // 元ブロックのy（下端基準で上に積み上がる）
+            const origY = startY + (maxRows - 1 - row) * (blockH + gapY);
+            // 反射：ブロック下端を軸に上下反転
+            const reflY = 2 * bottomY - origY - blockH;
+            // 下に行くほど透明（フェードアウト）
+            const fadeRatio = row / maxRows; // 0=一番下（強い反射）、1=一番上（薄い）
+            const alpha = (1 - fadeRatio) * 0.35;
 
-          const x = Math.cos(spiralAngle) * (radius + wobble);
-          const y = Math.sin(spiralAngle) * (radius + wobble);
-
-          if (p === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
+            ctx.fillStyle = `hsla(${hue}, 80%, 40%, ${alpha})`;
+            ctx.beginPath();
+            ctx.roundRect(startX + col * (blockW + gapX), reflY, blockW, blockH, 3);
+            ctx.fill();
+          }
         }
+
+        // 反射境界線（薄いセパレーター）
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(startX, bottomY);
+        ctx.lineTo(startX + totalW, bottomY);
         ctx.stroke();
         ctx.restore();
       }
+    }
 
-      // 中心の光球
-      const centerGlow = ctx.createRadialGradient(0, 0, 0, 0, 0, 30 + bass * 0.4 * sens);
-      centerGlow.addColorStop(0, `rgba(255,255,255,${0.8 + level * 0.2})`);
-      centerGlow.addColorStop(0.5, getColor(Math.floor(time * 30) % 100, 100, 0.5));
-      centerGlow.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = centerGlow;
+    // 🌊 液体波形（画像5参考：リキッドな流体リング波形）
+    function drawLiquidWave(spectrum, bass, level) {
+      const sens = settings.sensitivity;
+      const time = Date.now() * 0.001;
+      const layerCount = 6;
+      const baseRadius = 80;
+      const maxRadius = 220;
+
+      for (let layer = 0; layer < layerCount; layer++) {
+        const t = layer / (layerCount - 1);
+        const radius = baseRadius + t * (maxRadius - baseRadius);
+        const points = 180;
+        const colorIdx = Math.floor((layer / layerCount) * 100);
+        const phaseOffset = layer * 0.4 + angleOffset * (layer % 2 === 0 ? 0.3 : -0.2);
+
+        // 各ポイントの振幅を計算
+        const pts = [];
+        for (let i = 0; i <= points; i++) {
+          const angle = (i / points) * Math.PI * 2;
+          const specIdx = Math.floor((i / points) * (spectrum.length / 2));
+          const specVal = (spectrum[specIdx] || 0) / 255 * sens;
+
+          // 複数の波を重ねてリキッド感を出す
+          const wave1 = Math.sin(angle * 3 + phaseOffset + time * 0.8) * 18 * (0.3 + specVal);
+          const wave2 = Math.sin(angle * 5 - phaseOffset * 1.3 + time * 1.2) * 10 * specVal;
+          const wave3 = Math.cos(angle * 2 + time * 0.5) * 8 * level * sens;
+          const r = radius + wave1 + wave2 + wave3 + specVal * 30;
+
+          pts.push({
+            x: Math.cos(angle) * r,
+            y: Math.sin(angle) * r
+          });
+        }
+
+        // 塗りつぶしリング（内側）
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) {
+          const prev = pts[i - 1];
+          const curr = pts[i];
+          const cpx = (prev.x + curr.x) / 2;
+          const cpy = (prev.y + curr.y) / 2;
+          ctx.quadraticCurveTo(prev.x, prev.y, cpx, cpy);
+        }
+        ctx.closePath();
+
+        // グロー付きストローク
+        ctx.strokeStyle = getColor(colorIdx, 100, 0.85);
+        ctx.lineWidth = settings.lineWidth * 0.8 + 1;
+        ctx.shadowColor = getColor(colorIdx, 100, 0.6);
+        ctx.shadowBlur = 14;
+        ctx.stroke();
+
+        // 半透明塗りつぶし（液体感）
+        const fillGrad = ctx.createRadialGradient(0, 0, radius * 0.6, 0, 0, radius * 1.3);
+        fillGrad.addColorStop(0, getColor(colorIdx, 100, 0.04));
+        fillGrad.addColorStop(1, getColor((colorIdx + 20) % 100, 100, 0.12));
+        ctx.fillStyle = fillGrad;
+        ctx.globalAlpha = 0.4;
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // 中心の光点
+      const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, 25 + bass * 0.3 * sens);
+      glow.addColorStop(0, `rgba(255,255,255,${0.7 + level * 0.3})`);
+      glow.addColorStop(0.5, getColor(Math.floor(time * 20) % 100, 100, 0.4));
+      glow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = glow;
       ctx.beginPath();
-      ctx.arc(0, 0, 30 + bass * 0.4 * sens, 0, Math.PI * 2);
+      ctx.arc(0, 0, 25 + bass * 0.3 * sens, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    // 🪞 鏡面反射（ガラスエフェクト）：現在のcanvas内容を下半分に反転して薄く重ねる
-    function drawMirrorReflection() {
-      const cw = canvas.width;
-      const ch = canvas.height;
-      const reflectionH = ch * 0.35; // 反射領域の高さ（35%）
+    // ✨ スパイラル花火（画像6参考：中心から伸びる鋭い回転アーム）
+    function drawSpiralFirework(spectrum, bass, level) {
+      const sens = settings.sensitivity;
+      const time = Date.now() * 0.001;
+      const arms = 6;
+      const pointsPerArm = 80;
+      // 各アームは少しずつ位相がずれて回転
+      const rotation = angleOffset * 2;
 
-      ctx.save();
-      ctx.translate(0, ch);
-      ctx.scale(1, -1);
+      for (let arm = 0; arm < arms; arm++) {
+        const armBaseAngle = (arm / arms) * Math.PI * 2 + rotation;
+        const colorIdx = Math.floor((arm / arms) * 100);
 
-      // 下半分（反転元）をそのまま描画
-      ctx.drawImage(canvas, 0, ch - reflectionH, cw, reflectionH, 0, ch - reflectionH, cw, reflectionH);
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = getColor(colorIdx, 100, 0.7);
 
-      ctx.restore();
+        // アームを2本の曲線で描く（カーブしたアーム）
+        for (let stroke = 0; stroke < 2; stroke++) {
+          const angleOffset2 = stroke * 0.18 - 0.09; // 2本を少しずらす
+          ctx.beginPath();
+          ctx.strokeStyle = getColor((colorIdx + stroke * 15) % 100, 100, 0.9 - stroke * 0.2);
+          ctx.lineWidth = (settings.lineWidth + 1) * (1 - stroke * 0.4);
 
-      // 反射部分にフェードアウトのグラデーションマスクをかける
-      ctx.save();
-      const fadeGrad = ctx.createLinearGradient(0, ch / 2, 0, ch / 2 + reflectionH);
-      fadeGrad.addColorStop(0, 'rgba(0,0,0,0.55)');
-      fadeGrad.addColorStop(0.4, 'rgba(0,0,0,0.75)');
-      fadeGrad.addColorStop(1, 'rgba(0,0,0,0.97)');
-      ctx.fillStyle = fadeGrad;
-      ctx.fillRect(0, ch / 2, cw, reflectionH);
-      ctx.restore();
+          for (let p = 0; p < pointsPerArm; p++) {
+            const t = p / (pointsPerArm - 1);
+            const idx = Math.floor(t * (spectrum.length / 3));
+            const specVal = (spectrum[idx] || 0) / 255 * sens;
+
+            // アームは外側に向かって曲がるスパイラル状
+            const r = t * (140 + specVal * 80 + bass * 0.5 * sens);
+            // 渦巻き：外側ほど角度が増える
+            const spiralAngle = armBaseAngle + angleOffset2 - t * Math.PI * 0.7 * (1 + level * 0.5);
+            // 先端がとがる（細くなる）
+            const tipTaper = Math.pow(1 - t, 0.5);
+
+            const x = Math.cos(spiralAngle) * r;
+            const y = Math.sin(spiralAngle) * r;
+
+            if (p === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      // 中心の白い光
+      const cGlow = ctx.createRadialGradient(0, 0, 0, 0, 0, 20 + bass * 0.4 * sens);
+      cGlow.addColorStop(0, `rgba(255,255,255,${0.9 + level * 0.1})`);
+      cGlow.addColorStop(0.4, `rgba(200,220,255,0.5)`);
+      cGlow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = cGlow;
+      ctx.beginPath();
+      ctx.arc(0, 0, 20 + bass * 0.4 * sens, 0, Math.PI * 2);
+      ctx.fill();
     }
 
     // パーティクル
