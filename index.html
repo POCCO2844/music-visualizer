@@ -653,6 +653,9 @@
   <script>
     // グローバル変数
     let canvas, ctx;
+    // 描画関数が参照する「論理的な描画サイズ」（録画中も常にプレビュー時の画面サイズ）
+    let drawW = window.innerWidth;
+    let drawH = window.innerHeight;
     let audioContext, analyser, dataArray, bufferLength;
     let source = null;
     let micStream = null;
@@ -759,13 +762,14 @@
 
     function resizeCanvas() {
       if (isRecordingResizeLocked) {
-        // 録画中は内部解像度は固定のまま、画面サイズ変化に応じて表示位置だけ再調整
         fitCanvasDisplayToScreen();
         return;
       }
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
-      // 通常時は内部解像度＝画面サイズなので、CSS表示サイズの指定は不要（解除しておく）
+      // 描画関数が参照する論理サイズを更新
+      drawW = canvas.width;
+      drawH = canvas.height;
       canvas.style.width = '';
       canvas.style.height = '';
       canvas.style.left = '0';
@@ -1024,8 +1028,19 @@
       // 出力解像度を決定し、録画用にキャンバスサイズを一時的に固定する
       const targetRes = getOutputResolution();
       isRecordingResizeLocked = true;
+      // drawW/drawHを録画解像度に合わせる
+      drawW = targetRes.width;
+      drawH = targetRes.height;
       canvas.width = targetRes.width;
       canvas.height = targetRes.height;
+      // sizeScaleを録画解像度比率で補正（画面上の見た目と録画内容を一致させる）
+      // 例：画面1440px→録画1920px なら scale *= 1920/1440
+      const scaleCompensation = Math.min(
+        targetRes.width / window.innerWidth,
+        targetRes.height / window.innerHeight
+      );
+      settings._origSizeScale = settings.sizeScale;
+      settings.sizeScale = settings.sizeScale * scaleCompensation;
       fitCanvasDisplayToScreen();
       showRecordingFrame(); // 録画枠を表示
       document.getElementById('recordingFrame').classList.add('recording'); // 録画中スタイル
@@ -1085,6 +1100,7 @@
       }
       if (!mimeType) {
         isRecordingResizeLocked = false;
+        if (settings._origSizeScale !== undefined) { settings.sizeScale = settings._origSizeScale; delete settings._origSizeScale; }
         resizeCanvas();
         showRecordingFrame();
         showInfo('❌ お使いのブラウザは録画をサポートしていません');
@@ -1095,6 +1111,7 @@
         mediaRecorder = new MediaRecorder(canvasStream, { mimeType, videoBitsPerSecond });
       } catch (e) {
         isRecordingResizeLocked = false;
+        if (settings._origSizeScale !== undefined) { settings.sizeScale = settings._origSizeScale; delete settings._origSizeScale; }
         resizeCanvas();
         showRecordingFrame();
         showInfo('❌ 録画開始失敗: ' + e.message);
@@ -1109,9 +1126,14 @@
         const webmBlob = new Blob(recordedChunks, { type: 'video/webm' });
         // 録画用に固定していたキャンバスサイズを画面サイズに戻す
         isRecordingResizeLocked = false;
-        resizeCanvas();
+        // sizeScaleを元に戻す
+        if (settings._origSizeScale !== undefined) {
+          settings.sizeScale = settings._origSizeScale;
+          delete settings._origSizeScale;
+        }
+        resizeCanvas(); // drawW/drawHも画面サイズに戻る
         document.getElementById('recordingFrame').classList.remove('recording');
-        showRecordingFrame(); // 録画停止後もプレビュー枠を表示
+        showRecordingFrame();
         if (settings.outputFormat === 'webm') {
           // WebM直接ダウンロード（変換なし）
           downloadBlob(webmBlob, 'visualizer-' + Date.now() + '.webm');
@@ -1696,8 +1718,8 @@
 
     // 背景メディアをアスペクト比を考慮して描画
     function drawMediaWithFit(media, mediaWidth, mediaHeight) {
-      const canvasWidth = canvas.width;
-      const canvasHeight = canvas.height;
+      const canvasWidth = drawW;
+      const canvasHeight = drawH;
 
       let drawX, drawY, drawWidth, drawHeight;
 
@@ -1893,7 +1915,7 @@
         const points = [];
         const step = Math.max(1, Math.floor(spectrum.length / (50 * settings.smoothness)));
         for (let i = 0; i < spectrum.length; i += step) {
-          const x = ((i / spectrum.length) - 0.5) * (canvas.width / settings.sizeScale);
+          const x = ((i / spectrum.length) - 0.5) * (drawW / settings.sizeScale);
           const y = ((spectrum[i] || 128) - 128) * 2 * (1 + bass / 255);
           points.push({ x, y });
         }
@@ -2374,8 +2396,8 @@
 
       // ctx.scale(sizeScale)が適用済みなので、canvas座標系をそのまま使えばsizeScaleが反映される
       // sizeScaleで割り戻さずにcanvasサイズを直接使う
-      const availW = canvas.width * 0.90;
-      const availH = canvas.height * 0.80;
+      const availW = drawW * 0.90;
+      const availH = drawH * 0.80;
       const totalRows = halfRows * 2 + 1; // 上+中央+下
       const dotW = Math.max(4, Math.floor(availW / barCount * 0.76));
       const dotH = Math.max(3, Math.floor(availH / totalRows * 0.72));
@@ -2430,8 +2452,8 @@
       const sens = settings.sensitivity;
       const points = 128;
       // ctx.scale(sizeScale)適用済みなので割り戻しなしで正しくスケールされる
-      const maxH = canvas.height * 0.38;
-      const w = canvas.width * 0.88;
+      const maxH = drawH * 0.38;
+      const w = drawW * 0.88;
       const startX = -w / 2;
 
       // 時間軸波形データを取得（山と谷がはっきり出る）
@@ -2582,7 +2604,7 @@
     // 💚 ネオンウェーブ（画像4参考：中心線から上下に振れる虹色波形）
     function drawNeonWave(spectrum, bass, level) {
       const sens = settings.sensitivity;
-      const w = canvas.width / settings.sizeScale;
+      const w = drawW / settings.sizeScale;
       const startX = -w / 2;
       const maxAmp = 130 * Math.min(sens, 2);
 
