@@ -352,6 +352,12 @@
       <option value="kaleidoscope">🔺 カレイドスコープ</option>
       <option value="mesh">🌐 メッシュ</option>
       <option value="crystal">💎 クリスタル</option>
+      <option value="dots">🟣 ドットイコライザー</option>
+      <option value="symmetricwave">🎵 シンメトリックウェーブ</option>
+      <option value="circlebars">⭕ サークルバー</option>
+      <option value="neonwave">💚 ネオンウェーブ</option>
+      <option value="rainbowblocks">🌈 レインボーブロック</option>
+      <option value="turbospiral">🌪️ ターボスパイラル</option>
     </select>
     <button id="recordBtn">⏺️ 録画開始</button>
   </div>
@@ -370,6 +376,13 @@
 
   <div id="settingsPanel">
     <h3>🎨 ビジュアル調整</h3>
+
+    <div class="setting-group">
+      <div class="checkbox-group">
+        <input type="checkbox" id="mirrorReflection">
+        <label for="mirrorReflection">🪞 鏡面反射（ガラスエフェクト）</label>
+      </div>
+    </div>
 
     <div class="setting-group">
       <label>サイズ</label>
@@ -652,6 +665,7 @@
       recordAudio: 'yes',
       recordFromStart: true,
       outputFormat: 'mp4',
+      mirrorReflection: false,
       resolutionMode: 'screen',
       customWidth: 1920,
       customHeight: 1080,
@@ -1286,6 +1300,10 @@
         settings.recordQuality = e.target.value;
       });
 
+      addListener('mirrorReflection', 'change', (e) => {
+        settings.mirrorReflection = e.target.checked;
+      });
+
       addListener('outputFormat', 'change', (e) => {
         settings.outputFormat = e.target.value;
       });
@@ -1699,6 +1717,12 @@
         case 'kaleidoscope': drawKaleidoscope(spectrum, bass, level); break;
         case 'mesh': drawMesh(spectrum, bass, level); break;
         case 'crystal': drawCrystal(spectrum, bass, level); break;
+        case 'dots': drawDots(spectrum, bass, level); break;
+        case 'symmetricwave': drawSymmetricWave(spectrum, bass, level); break;
+        case 'circlebars': drawCircleBars(spectrum, bass, level); break;
+        case 'neonwave': drawNeonWave(spectrum, bass, level); break;
+        case 'rainbowblocks': drawRainbowBlocks(spectrum, bass, level); break;
+        case 'turbospiral': drawTurboSpiral(spectrum, bass, level); break;
       }
 
       if (settings.showParticles) {
@@ -1706,6 +1730,12 @@
       }
 
       ctx.restore();
+
+      // 鏡面反射エフェクト（全ビジュアライザー共通）
+      if (settings.mirrorReflection) {
+        drawMirrorReflection();
+      }
+
       angleOffset += (0.01 + level * 0.05) * settings.rotationSpeed;
     }
 
@@ -2253,6 +2283,307 @@
 
         ctx.restore();
       }
+    }
+
+    // 🟣 ドットイコライザー（画像1参考：丸ドットが縦に積み上がるバー）
+    function drawDots(spectrum, bass, level) {
+      const sens = settings.sensitivity;
+      const barCount = 48;
+      const dotRows = 20;
+      const dotR = 7;
+      const gap = 4;
+      const barW = dotR * 2 + gap;
+      const totalW = barCount * (barW + gap);
+      const startX = -totalW / 2;
+      const dotH = dotR * 2 + gap;
+      const totalH = dotRows * dotH;
+
+      for (let i = 0; i < barCount; i++) {
+        const idx = Math.floor((i / barCount) * (spectrum.length / 2));
+        const value = (spectrum[idx] || 0) / 255 * sens;
+        const activeDots = Math.ceil(value * dotRows);
+        const x = startX + i * (barW + gap) + dotR;
+
+        for (let row = 0; row < dotRows; row++) {
+          const y = totalH / 2 - row * dotH - dotR;
+          const isActive = row < activeDots;
+          const brightness = isActive ? 1 : 0.08;
+          const colorRatio = i / barCount;
+          ctx.globalAlpha = brightness;
+          ctx.fillStyle = getColor(Math.floor(colorRatio * 100), 100, 1);
+          ctx.beginPath();
+          ctx.roundRect(x - dotR, y - dotR, dotR * 2, dotR * 2, 3);
+          ctx.fill();
+        }
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // 🎵 シンメトリックウェーブ（画像2参考：細いバーが中央から上下対称）
+    function drawSymmetricWave(spectrum, bass, level) {
+      const sens = settings.sensitivity;
+      const barCount = 80;
+      const maxH = canvas.height * 0.35 / settings.sizeScale;
+      const barW = 3;
+      const gap = 2;
+      const totalW = barCount * (barW + gap);
+      const startX = -totalW / 2;
+
+      for (let i = 0; i < barCount; i++) {
+        const idx = Math.floor((i / barCount) * (spectrum.length / 2));
+        const value = (spectrum[idx] || 0) / 255 * sens;
+        const h = value * maxH;
+        const x = startX + i * (barW + gap);
+        const colorRatio = i / barCount;
+
+        // グラデーション作成（上がピンク系、下がオレンジ系）
+        const grad = ctx.createLinearGradient(0, -h, 0, h);
+        grad.addColorStop(0, getColor(Math.floor(colorRatio * 100), 100, 1));
+        grad.addColorStop(0.5, getColor(Math.floor(colorRatio * 100 + 20), 100, 0.9));
+        grad.addColorStop(1, getColor(Math.floor(colorRatio * 100), 100, 1));
+
+        ctx.fillStyle = grad;
+        ctx.fillRect(x, -h, barW, h * 2); // 上下対称
+      }
+    }
+
+    // ⭕ サークルバー（画像3参考：円形に外側に伸びるバー）
+    function drawCircleBars(spectrum, bass, level) {
+      const sens = settings.sensitivity;
+      const barCount = 128;
+      const innerR = 80 + bass * 0.3 * sens;
+      const maxBarH = 120;
+
+      for (let i = 0; i < barCount; i++) {
+        const idx = Math.floor((i / barCount) * (spectrum.length / 2));
+        const value = (spectrum[idx] || 0) / 255 * sens;
+        const barH = value * maxBarH + 2;
+        const angle = (i / barCount) * Math.PI * 2 - Math.PI / 2;
+
+        const x1 = Math.cos(angle) * innerR;
+        const y1 = Math.sin(angle) * innerR;
+        const x2 = Math.cos(angle) * (innerR + barH);
+        const y2 = Math.sin(angle) * (innerR + barH);
+
+        ctx.strokeStyle = getColor(i, barCount, 0.9);
+        ctx.lineWidth = (Math.PI * 2 * innerR / barCount) * 0.6;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+      }
+
+      // 中心の白丸
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.beginPath();
+      ctx.arc(0, 0, innerR - 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 💚 ネオンウェーブ（画像4参考：虹色ネオン波形ライン）
+    function drawNeonWave(spectrum, bass, level) {
+      const sens = settings.sensitivity;
+      const w = canvas.width / settings.sizeScale;
+      const startX = -w / 2;
+      const points = 120;
+      const maxAmp = 120;
+
+      // 複数の波ラインを重ねる
+      const lines = [
+        { colorOff: 0,  alpha: 1.0, lw: 3 },
+        { colorOff: 33, alpha: 0.7, lw: 2 },
+        { colorOff: 66, alpha: 0.5, lw: 1.5 },
+      ];
+
+      for (const line of lines) {
+        ctx.save();
+        ctx.shadowBlur = 18;
+        ctx.lineWidth = line.lw;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+
+        for (let i = 0; i <= points; i++) {
+          const idx = Math.floor((i / points) * (spectrum.length / 2));
+          const value = (spectrum[idx] || 0) / 255 * sens;
+          const x = startX + (i / points) * w;
+          const y = (value - 0.5) * maxAmp * 2;
+
+          const colorIdx = Math.floor((i / points) * 100 + line.colorOff) % 100;
+          ctx.strokeStyle = getColor(colorIdx, 100, line.alpha);
+          ctx.shadowColor = getColor(colorIdx, 100, 0.8);
+
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // 中心の強調ライン
+      ctx.save();
+      ctx.globalAlpha = 0.4;
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 8]);
+      ctx.beginPath();
+      ctx.moveTo(-w / 2, 0);
+      ctx.lineTo(w / 2, 0);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 🌈 レインボーブロック（画像7・8参考：格子状ブロックのイコライザー）
+    function drawRainbowBlocks(spectrum, bass, level) {
+      const sens = settings.sensitivity;
+      const colCount = 24;
+      const maxRows = 16;
+      const blockW = 28;
+      const blockH = 18;
+      const gapX = 5;
+      const gapY = 3;
+      const totalW = colCount * (blockW + gapX);
+      const totalH = maxRows * (blockH + gapY);
+      const startX = -totalW / 2;
+      const startY = -totalH / 2;
+
+      // 各列の「ピーク保持」（落下するピーク点）
+      if (!drawRainbowBlocks._peaks) {
+        drawRainbowBlocks._peaks = new Array(colCount).fill(0);
+        drawRainbowBlocks._peakVel = new Array(colCount).fill(0);
+      }
+      const peaks = drawRainbowBlocks._peaks;
+      const peakVel = drawRainbowBlocks._peakVel;
+
+      for (let col = 0; col < colCount; col++) {
+        const idx = Math.floor((col / colCount) * (spectrum.length / 2));
+        const value = (spectrum[idx] || 0) / 255 * sens;
+        const activeRows = Math.ceil(value * maxRows);
+
+        // ピーク更新
+        if (activeRows > peaks[col]) {
+          peaks[col] = activeRows;
+          peakVel[col] = 0;
+        } else {
+          peakVel[col] += 0.08;
+          peaks[col] = Math.max(0, peaks[col] - peakVel[col]);
+        }
+
+        for (let row = 0; row < maxRows; row++) {
+          const x = startX + col * (blockW + gapX);
+          const y = startY + (maxRows - 1 - row) * (blockH + gapY);
+          const isActive = row < activeRows;
+
+          // 虹色：列で色が変わる
+          const hue = (col / colCount) * 300;
+          if (isActive) {
+            // アクティブブロック：明るく
+            ctx.fillStyle = `hsla(${hue}, 100%, 55%, 0.95)`;
+            ctx.shadowColor = `hsla(${hue}, 100%, 70%, 0.6)`;
+            ctx.shadowBlur = 6;
+          } else {
+            // 非アクティブ：暗く
+            ctx.fillStyle = `hsla(${hue}, 40%, 15%, 0.4)`;
+            ctx.shadowBlur = 0;
+          }
+          ctx.beginPath();
+          ctx.roundRect(x, y, blockW, blockH, 3);
+          ctx.fill();
+        }
+
+        // ピークブロック
+        if (peaks[col] > 0) {
+          const peakRow = Math.floor(peaks[col]);
+          if (peakRow < maxRows) {
+            const y = startY + (maxRows - 1 - peakRow) * (blockH + gapY);
+            const hue = (col / colCount) * 300;
+            ctx.fillStyle = `hsla(${hue}, 100%, 85%, 1)`;
+            ctx.shadowColor = `hsla(${hue}, 100%, 90%, 0.9)`;
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+            ctx.roundRect(startX + col * (blockW + gapX), y, blockW, blockH, 3);
+            ctx.fill();
+          }
+        }
+      }
+      ctx.shadowBlur = 0;
+    }
+
+    // 🌪️ ターボスパイラル（画像6参考：回転する花火・スパイラル）
+    function drawTurboSpiral(spectrum, bass, level) {
+      const sens = settings.sensitivity;
+      const arms = 7;
+      const pointsPerArm = 60;
+      const time = Date.now() * 0.001;
+      const baseRotation = angleOffset * 1.5;
+
+      for (let arm = 0; arm < arms; arm++) {
+        const armAngle = (arm / arms) * Math.PI * 2 + baseRotation;
+        ctx.save();
+        ctx.rotate(armAngle);
+
+        ctx.beginPath();
+        ctx.lineWidth = settings.lineWidth + 1;
+        ctx.strokeStyle = getColor(Math.floor((arm / arms) * 100), 100, 0.85);
+        ctx.shadowColor = getColor(Math.floor((arm / arms) * 100), 100, 0.6);
+        ctx.shadowBlur = 12;
+        ctx.lineCap = 'round';
+
+        for (let p = 0; p < pointsPerArm; p++) {
+          const t = p / pointsPerArm;
+          const idx = Math.floor(t * (spectrum.length / 3));
+          const value = (spectrum[idx] || 0) / 255 * sens;
+
+          const radius = t * 200 * (1 + value * 0.6);
+          const spiralAngle = t * Math.PI * 3;
+          const wobble = Math.sin(time * 3 + t * Math.PI * 4 + arm) * 15 * value;
+
+          const x = Math.cos(spiralAngle) * (radius + wobble);
+          const y = Math.sin(spiralAngle) * (radius + wobble);
+
+          if (p === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // 中心の光球
+      const centerGlow = ctx.createRadialGradient(0, 0, 0, 0, 0, 30 + bass * 0.4 * sens);
+      centerGlow.addColorStop(0, `rgba(255,255,255,${0.8 + level * 0.2})`);
+      centerGlow.addColorStop(0.5, getColor(Math.floor(time * 30) % 100, 100, 0.5));
+      centerGlow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = centerGlow;
+      ctx.beginPath();
+      ctx.arc(0, 0, 30 + bass * 0.4 * sens, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 🪞 鏡面反射（ガラスエフェクト）：現在のcanvas内容を下半分に反転して薄く重ねる
+    function drawMirrorReflection() {
+      const cw = canvas.width;
+      const ch = canvas.height;
+      const reflectionH = ch * 0.35; // 反射領域の高さ（35%）
+
+      ctx.save();
+      ctx.translate(0, ch);
+      ctx.scale(1, -1);
+
+      // 下半分（反転元）をそのまま描画
+      ctx.drawImage(canvas, 0, ch - reflectionH, cw, reflectionH, 0, ch - reflectionH, cw, reflectionH);
+
+      ctx.restore();
+
+      // 反射部分にフェードアウトのグラデーションマスクをかける
+      ctx.save();
+      const fadeGrad = ctx.createLinearGradient(0, ch / 2, 0, ch / 2 + reflectionH);
+      fadeGrad.addColorStop(0, 'rgba(0,0,0,0.55)');
+      fadeGrad.addColorStop(0.4, 'rgba(0,0,0,0.75)');
+      fadeGrad.addColorStop(1, 'rgba(0,0,0,0.97)');
+      ctx.fillStyle = fadeGrad;
+      ctx.fillRect(0, ch / 2, cw, reflectionH);
+      ctx.restore();
     }
 
     // パーティクル
