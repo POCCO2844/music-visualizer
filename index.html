@@ -765,21 +765,35 @@
         fitCanvasDisplayToScreen();
         return;
       }
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-      // 描画関数が参照する論理サイズを更新
-      drawW = canvas.width;
-      drawH = canvas.height;
-      canvas.style.width = '';
-      canvas.style.height = '';
-      canvas.style.left = '0';
-      canvas.style.top = '0';
+      // 常に録画解像度でcanvasを設定し、CSSで画面に収める
+      applyOutputResolution();
     }
 
-    // 録画中、canvasの内部解像度（縦横比）を保ったまま画面内に収まるようCSS表示サイズを調整
+    // 録画解像度をcanvasに適用し、画面にフィット表示する
+    function applyOutputResolution() {
+      const res = getOutputResolution();
+      drawW = res.width;
+      drawH = res.height;
+      canvas.width = res.width;
+      canvas.height = res.height;
+      fitCanvasDisplayToScreen();
+    }
+
+    // canvasの内部解像度のアスペクト比を保ったまま画面内に収まるようCSS表示サイズを調整
     function fitCanvasDisplayToScreen() {
       const screenW = window.innerWidth;
       const screenH = window.innerHeight;
+
+      // 画面サイズモードの場合はcanvas=画面そのままでCSSリセット
+      if (!isRecordingResizeLocked && settings.resolutionMode === 'screen') {
+        canvas.style.width = '';
+        canvas.style.height = '';
+        canvas.style.left = '0';
+        canvas.style.top = '0';
+        showRecordingFrame();
+        return;
+      }
+
       const canvasRatio = canvas.width / canvas.height;
       const screenRatio = screenW / screenH;
 
@@ -1013,8 +1027,8 @@
         default: label = 'プリセット解像度';
       }
       el.textContent = `出力サイズ: ${res.width} × ${res.height}（${label}）`;
-      // 録画中でない場合もプレビュー枠を更新
-      if (!isRecording) showRecordingFrame();
+      // 録画中でない場合、解像度変更をcanvasに即時反映
+      if (!isRecording) applyOutputResolution();
     }
 
     // 録画開始
@@ -1025,22 +1039,14 @@
         console.warn('Safariが検出されました。MP4変換処理が非常に遅い、または完了しない場合があります。Chrome推奨です。');
       }
 
-      // 出力解像度を決定し、録画用にキャンバスサイズを一時的に固定する
+      // 出力解像度を決定（既にapplyOutputResolutionで設定済みだが念のため再確認）
       const targetRes = getOutputResolution();
       isRecordingResizeLocked = true;
-      // drawW/drawHを録画解像度に合わせる
+      // drawW/drawHとcanvasはすでに録画解像度に設定済み
       drawW = targetRes.width;
       drawH = targetRes.height;
       canvas.width = targetRes.width;
       canvas.height = targetRes.height;
-      // sizeScaleを録画解像度比率で補正（画面上の見た目と録画内容を一致させる）
-      // 例：画面1440px→録画1920px なら scale *= 1920/1440
-      const scaleCompensation = Math.min(
-        targetRes.width / window.innerWidth,
-        targetRes.height / window.innerHeight
-      );
-      settings._origSizeScale = settings.sizeScale;
-      settings.sizeScale = settings.sizeScale * scaleCompensation;
       fitCanvasDisplayToScreen();
       showRecordingFrame(); // 録画枠を表示
       document.getElementById('recordingFrame').classList.add('recording'); // 録画中スタイル
@@ -1100,8 +1106,7 @@
       }
       if (!mimeType) {
         isRecordingResizeLocked = false;
-        if (settings._origSizeScale !== undefined) { settings.sizeScale = settings._origSizeScale; delete settings._origSizeScale; }
-        resizeCanvas();
+        applyOutputResolution();
         showRecordingFrame();
         showInfo('❌ お使いのブラウザは録画をサポートしていません');
         return;
@@ -1111,8 +1116,7 @@
         mediaRecorder = new MediaRecorder(canvasStream, { mimeType, videoBitsPerSecond });
       } catch (e) {
         isRecordingResizeLocked = false;
-        if (settings._origSizeScale !== undefined) { settings.sizeScale = settings._origSizeScale; delete settings._origSizeScale; }
-        resizeCanvas();
+        applyOutputResolution();
         showRecordingFrame();
         showInfo('❌ 録画開始失敗: ' + e.message);
         return;
@@ -1126,12 +1130,7 @@
         const webmBlob = new Blob(recordedChunks, { type: 'video/webm' });
         // 録画用に固定していたキャンバスサイズを画面サイズに戻す
         isRecordingResizeLocked = false;
-        // sizeScaleを元に戻す
-        if (settings._origSizeScale !== undefined) {
-          settings.sizeScale = settings._origSizeScale;
-          delete settings._origSizeScale;
-        }
-        resizeCanvas(); // drawW/drawHも画面サイズに戻る
+        applyOutputResolution(); // プレビュー状態に戻す
         document.getElementById('recordingFrame').classList.remove('recording');
         showRecordingFrame();
         if (settings.outputFormat === 'webm') {
@@ -1769,7 +1768,7 @@
       if (hasBgMedia) {
         // 背景メディアがある場合：残像を先に適用
         ctx.fillStyle = `rgba(0, 0, 0, ${settings.trailEffect})`;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillRect(0, 0, drawW, drawH);
 
         // 背景画像/動画を透明度を下げて描画（残像が見えるように）
         ctx.globalAlpha = settings.bgOpacity * settings.trailEffect * 2;
@@ -1783,7 +1782,7 @@
         // 背景色
         const bg = settings.bgColor;
         ctx.fillStyle = `rgba(${bg[0]}, ${bg[1]}, ${bg[2]}, ${settings.trailEffect})`;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillRect(0, 0, drawW, drawH);
       }
 
       // 周波数データ
@@ -1810,7 +1809,7 @@
       }
 
       ctx.save();
-      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.translate(drawW / 2, drawH / 2);
       ctx.scale(settings.sizeScale, settings.sizeScale);
 
       switch (mode) {
@@ -1883,7 +1882,7 @@
       const numBars = 64;
       // 線の太さに応じて全体幅を調整（細いときは狭く、太いときは広く）
       const widthRatio = 0.3 + (settings.lineWidth / 10) * 0.5; // 0.3〜0.8
-      const totalWidth = (canvas.width / settings.sizeScale) * widthRatio;
+      const totalWidth = (drawW / settings.sizeScale) * widthRatio;
       const barWidth = totalWidth / numBars;
       const gap = 1; // 固定の小さな隙間
       const actualBarWidth = Math.max(barWidth - gap, 2);
