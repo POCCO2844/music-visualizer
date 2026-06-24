@@ -2282,46 +2282,46 @@
       }
     }
 
-    // 🟣 ドットイコライザー（画像1参考：下から上に積み上がるドットバー・グリッド中央配置）
+    // 🟣 ドットイコライザー（画像1参考：中央から上下両方向に伸びるドットバー）
     function drawDots(spectrum, bass, level) {
       const sens = settings.sensitivity;
       const barCount = 48;
-      const dotRows = 22;
+      const halfRows = 11; // 中央から上下それぞれ何行分
 
       // canvasサイズに合わせてドットサイズを動的計算
       const availW = canvas.width / settings.sizeScale * 0.90;
-      const availH = canvas.height / settings.sizeScale * 0.72;
+      const availH = canvas.height / settings.sizeScale * 0.80;
+      const totalRows = halfRows * 2 + 1; // 上+中央+下
       const dotW = Math.max(4, Math.floor(availW / barCount * 0.76));
-      const dotH = Math.max(3, Math.floor(availH / dotRows * 0.76));
+      const dotH = Math.max(3, Math.floor(availH / totalRows * 0.72));
       const gapX = Math.max(1, Math.floor(availW / barCount * 0.24));
-      const gapY = Math.max(1, Math.floor(availH / dotRows * 0.24));
+      const gapY = Math.max(1, Math.floor(availH / totalRows * 0.28));
 
       const totalW = barCount * (dotW + gapX) - gapX;
-      const totalH = dotRows * (dotH + gapY) - gapY;
       const startX = -totalW / 2;
-      // グリッド全体を画面中央に配置（上下均等に余白）
-      const gridTopY = -totalH / 2;
+      const rowStep = dotH + gapY;
 
       for (let i = 0; i < barCount; i++) {
         const idx = Math.floor((i / barCount) * (spectrum.length / 2));
         const rawValue = (spectrum[idx] || 0) / 255;
         const value = Math.pow(rawValue, 0.7) * sens;
-        const activeDots = Math.max(1, Math.ceil(value * dotRows));
+        // 音量に応じてアクティブな行数を決定（0〜halfRows）
+        const activeRows = Math.ceil(value * halfRows);
         const x = startX + i * (dotW + gapX);
+        const colorIdx = Math.floor((i / barCount) * 100) % 100;
 
-        for (let row = 0; row < dotRows; row++) {
-          // row=0が一番下、row=dotRows-1が一番上
-          const y = gridTopY + (dotRows - 1 - row) * (dotH + gapY);
-          const isActive = row < activeDots;
+        // 中央行（row=0）+ 上方向（row=1〜halfRows）+ 下方向（row=-1〜-halfRows）
+        for (let row = -halfRows; row <= halfRows; row++) {
+          const y = row * rowStep - dotH / 2;
+          // 中央からの距離がactiveRows以内ならアクティブ
+          const isActive = Math.abs(row) <= activeRows;
 
           if (isActive) {
-            const colorIdx = Math.floor((i / barCount) * 100) % 100;
             ctx.fillStyle = getColor(colorIdx, 100, 1);
             ctx.shadowColor = getColor(colorIdx, 100, 0.6);
             ctx.shadowBlur = 5;
             ctx.globalAlpha = 1;
           } else {
-            const colorIdx = Math.floor((i / barCount) * 100) % 100;
             ctx.fillStyle = getColor(colorIdx, 100, 0.08);
             ctx.shadowBlur = 0;
             ctx.globalAlpha = 0.12;
